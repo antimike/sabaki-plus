@@ -29,6 +29,12 @@ describe('getOpenFileFromArgv', () => {
     assert.strictEqual(getOpenFileFromArgv([dev, '.', file]), file)
   })
 
+  it('skips the "./" entry used by `npm start` (`electron ./`)', () => {
+    assert.strictEqual(getOpenFileFromArgv([dev, './']), null)
+    assert.strictEqual(getOpenFileFromArgv([dev, './', file]), file)
+    assert.strictEqual(getOpenFileFromArgv([dev, '.\\', file]), file)
+  })
+
   it('works regardless of the binary name (renamed Linux electron)', () => {
     assert.strictEqual(getOpenFileFromArgv([devRenamed, '.', file]), file)
     assert.strictEqual(getOpenFileFromArgv([devRenamed, '.']), null)
