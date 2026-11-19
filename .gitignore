@@ -19,3 +19,8 @@ test-results/
 
 # GTP communication logs written at runtime when engines are attached
 gtp_logs/
+
+# sabaki-plus: this fork is public; keep copyrighted problem collections out (FORK.md)
+/*.sgf
+collections/
+library/
