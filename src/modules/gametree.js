@@ -5,6 +5,7 @@ import {
   parseVertex,
   parseCompressedVertices,
 } from '@sabaki/sgf'
+import {transformVertex} from './gobantransformer.js'
 import {getId} from './utils.js'
 
 const alpha = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -380,6 +381,35 @@ export function getBoard(tree, id) {
   }
 
   return board
+}
+
+// Returns the board range to show for the SGF VW (view) property at `id`, in
+// transformed coordinates: {rangeX, rangeY} for BoundedGoban, or {} to show the
+// whole board. VW is inherited from the nearest ancestor that has it, and an
+// empty VW[] resets the view to the whole board.
+export function getViewRange(tree, id, board, transformation = '') {
+  let node = tree.get(id)
+  while (node != null && node.data.VW == null) {
+    node = tree.get(node.parentId)
+  }
+
+  let vertices = (node?.data.VW ?? [])
+    .filter((value) => value !== '')
+    .flatMap((value) => parseCompressedVertices(value))
+    .filter((vertex) => board.has(vertex))
+    .map((vertex) =>
+      transformVertex(vertex, transformation, board.width, board.height),
+    )
+
+  if (vertices.length === 0) return {}
+
+  let xs = vertices.map(([x, _]) => x)
+  let ys = vertices.map(([_, y]) => y)
+
+  return {
+    rangeX: [Math.min(...xs), Math.max(...xs)],
+    rangeY: [Math.min(...ys), Math.max(...ys)],
+  }
 }
 
 export function clearBoardCache() {
