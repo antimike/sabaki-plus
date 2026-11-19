@@ -280,25 +280,14 @@ export default class Goban extends Component {
         board.height,
       )
 
-    // Crop to the SGF VW window (inherited from the nearest ancestor; VW[] resets)
+    // Crop to the SGF VW window
 
-    let rangeX, rangeY
-    let vwNode = gameTree.get(treePosition)
-    while (vwNode != null && vwNode.data.VW == null) {
-      vwNode = gameTree.get(vwNode.parentId)
-    }
-    let vwVertices = (vwNode?.data.VW ?? [])
-      .filter((value) => value !== '')
-      .flatMap((value) => sgf.parseCompressedVertices(value))
-      .filter(([x, y]) => board.has([x, y]))
-      .map(transformVertex)
-
-    if (vwVertices.length > 0) {
-      let xs = vwVertices.map(([x, _]) => x)
-      let ys = vwVertices.map(([_, y]) => y)
-      rangeX = [Math.min(...xs), Math.max(...xs)]
-      rangeY = [Math.min(...ys), Math.max(...ys)]
-    }
+    let {rangeX, rangeY} = gametree.getViewRange(
+      gameTree,
+      treePosition,
+      board,
+      transformation,
+    )
 
     // Calculate coordinates
 
