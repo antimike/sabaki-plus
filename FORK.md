@@ -43,7 +43,12 @@ Notes:
    `install.js` once fetches it up front.
 2. On Wayland, Electron prints a harmless Vulkan/ozone error line on stderr; the
    window renders fine.
-3. Before the argv fix (branch `fix/argv-dot-slash`), `electron ./` and
+3. Under a Wayland session, `xvfb-run` alone does not hide the test windows:
+   Electron still picks Wayland from `WAYLAND_DISPLAY` or `XDG_SESSION_TYPE`.
+   For a run that stays off screen, unset both:
+   `env -u WAYLAND_DISPLAY -u XDG_SESSION_TYPE npm run test:e2e` (50 tests
+   passed this way on 2026-11-19).
+4. Before the argv fix (branch `fix/argv-dot-slash`), `electron ./` and
    therefore `npm start` treated `./` as the file to open. With the fix both `.`
    and `./` work.
 
