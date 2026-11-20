@@ -425,3 +425,82 @@ function countZone(zone, sign) {
     0,
   )
 }
+
+/**
+ * Put a frame built for a problem's starting position onto a later position
+ * of the same problem (a node further down its tree).
+ *
+ * The frame stays the one built for the start, so its komi and window hold
+ * for the whole line being explored. Returns the framed signMap, or null when
+ * the position no longer matches the start outside the window (a stone was
+ * played or captured there), since the frame may then touch it.
+ *
+ * @param {{signMap: number[][], window: {rangeX: number[], rangeY: number[]},
+ *   frameVertices: Array<[number, number]>}} frame - from getTsumegoFrame
+ * @param {number[][]} startSignMap - the position the frame was built for
+ * @param {number[][]} signMap - the position to frame
+ */
+export function applyTsumegoFrame(frame, startSignMap, signMap) {
+  let {rangeX, rangeY} = frame.window
+  let result = signMap.map((row) => [...row])
+
+  for (let y = 0; y < signMap.length; y++) {
+    for (let x = 0; x < signMap[y].length; x++) {
+      let inWindow =
+        x >= rangeX[0] && x <= rangeX[1] && y >= rangeY[0] && y <= rangeY[1]
+
+      if (!inWindow && signMap[y][x] !== startSignMap[y][x]) return null
+    }
+  }
+
+  for (let [x, y] of frame.frameVertices) {
+    result[y][x] = frame.signMap[y][x]
+  }
+
+  return result
+}
+
+/**
+ * The window's points as [x, y] vertices, row by row.
+ *
+ * @param {{rangeX: number[], rangeY: number[]}} window
+ */
+export function getWindowVertices({rangeX, rangeY}) {
+  let vertices = []
+
+  for (let y = rangeY[0]; y <= rangeY[1]; y++) {
+    for (let x = rangeX[0]; x <= rangeX[1]; x++) {
+      vertices.push([x, y])
+    }
+  }
+
+  return vertices
+}
+
+/**
+ * Keep analysis inside the window: drop candidate moves outside it, and cut
+ * each best line at its first move outside it. The engine is already told to
+ * stay in the window (`allow`); this makes sure nothing in the frame reaches
+ * the heatmap or the best line even if an engine ignores that.
+ *
+ * @param {Array<{vertex: number[], moves: number[][]}>} variations - from
+ *   parseAnalysis
+ * @param {{rangeX: number[], rangeY: number[]}} window
+ */
+export function restrictAnalysisToWindow(variations, {rangeX, rangeY}) {
+  let inWindow = (vertex) =>
+    vertex != null &&
+    vertex[0] >= rangeX[0] &&
+    vertex[0] <= rangeX[1] &&
+    vertex[1] >= rangeY[0] &&
+    vertex[1] <= rangeY[1]
+
+  return variations
+    .filter(({vertex}) => inWindow(vertex))
+    .map((variation) => {
+      let end = variation.moves.findIndex((vertex) => !inWindow(vertex))
+      if (end < 0) return variation
+
+      return {...variation, moves: variation.moves.slice(0, end)}
+    })
+}

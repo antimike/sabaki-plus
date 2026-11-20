@@ -2,9 +2,12 @@ import assert from 'assert'
 import Board from '@sabaki/go-board'
 
 import {
+  applyTsumegoFrame,
   getTsumegoFrame,
+  getWindowVertices,
   guessAttacker,
   inferAttackerFromText,
+  restrictAnalysisToWindow,
 } from '../src/modules/tsumegoframe.js'
 
 // All positions here are made up for these tests.
@@ -302,6 +305,81 @@ describe('tsumegoframe', () => {
 
       map = position(19, ['OO', 'O.'])
       assert.strictEqual(guessAttacker(map, [[0, 0]]), 1)
+    })
+  })
+
+  describe('applyTsumegoFrame', () => {
+    it('frames a later position with the starting frame', () => {
+      let start = position(19, CORNER)
+      let frame = getTsumegoFrame(start)
+      let later = start.map((row) => [...row])
+      later[3][3] = 1 // a move inside the window
+
+      let framed = applyTsumegoFrame(frame, start, later)
+
+      assert.strictEqual(framed[3][3], 1)
+      for (let [x, y] of frame.frameVertices) {
+        assert.strictEqual(framed[y][x], frame.signMap[y][x])
+      }
+      assert.ok(new Board(framed).isValid())
+      assert.strictEqual(later[10][10], 0, 'input must not be changed')
+    })
+
+    it('gives up when the position changed outside the window', () => {
+      let start = position(19, CORNER)
+      let frame = getTsumegoFrame(start)
+      let later = start.map((row) => [...row])
+      later[15][15] = 1
+
+      assert.strictEqual(applyTsumegoFrame(frame, start, later), null)
+    })
+  })
+
+  describe('getWindowVertices', () => {
+    it('lists every point of the window', () => {
+      let vertices = getWindowVertices({rangeX: [2, 4], rangeY: [0, 1]})
+
+      assert.strictEqual(vertices.length, 6)
+      assert.deepStrictEqual(vertices[0], [2, 0])
+      assert.deepStrictEqual(vertices[5], [4, 1])
+    })
+  })
+
+  describe('restrictAnalysisToWindow', () => {
+    let window = {rangeX: [0, 7], rangeY: [0, 5]}
+
+    it('drops candidates outside the window', () => {
+      let variations = [
+        {vertex: [1, 1], moves: [[1, 1]]},
+        {vertex: [10, 10], moves: [[10, 10]]},
+      ]
+      let result = restrictAnalysisToWindow(variations, window)
+
+      assert.deepStrictEqual(
+        result.map(({vertex}) => vertex),
+        [[1, 1]],
+      )
+    })
+
+    it('cuts a best line at its first move outside the window', () => {
+      let variations = [
+        {
+          vertex: [1, 1],
+          moves: [
+            [1, 1],
+            [2, 2],
+            [12, 3],
+            [3, 3],
+          ],
+        },
+      ]
+      let [result] = restrictAnalysisToWindow(variations, window)
+
+      assert.deepStrictEqual(result.moves, [
+        [1, 1],
+        [2, 2],
+      ])
+      assert.strictEqual(variations[0].moves.length, 4)
     })
   })
 })
