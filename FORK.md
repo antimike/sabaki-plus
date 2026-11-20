@@ -108,7 +108,8 @@ Notes:
    frame is never drawn. Engines → Whole-Board Analysis
    (`board.analysis_whole_board`) turns it off: no frame, no `allow`, the
    problem's own `KM` and `RU` (or the engine's rules without `RU`). Without
-   the frame, KataGo plays big points elsewhere on the board.
+   the frame, KataGo plays big points elsewhere on the board. How the frame
+   is laid out and balanced: [docs/tsumego-frame.md](docs/tsumego-frame.md).
 
 ## Public repo: no copyrighted SGF
 

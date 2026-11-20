@@ -3,6 +3,7 @@ import Board from '@sabaki/go-board'
 
 import {
   applyTsumegoFrame,
+  estimateLivingArea,
   getTsumegoFrame,
   getWindowVertices,
   guessAttacker,
@@ -36,6 +37,77 @@ const SIDE = ['...O..O...', '..XOOOOX..', '..X....X..', '...XXXX...']
 // Only its geometry matters: with Black as attacker, the defender's share of
 // territory ends partway through the ring at distance 5 from the window.
 const STRIP = ['..OOOO..', '.OXXXXO.', '.OX..XO.', '..X..X..']
+
+// Straight three on the top edge (baduk kata cgbq): Black lives at [1, 0],
+// White kills there.
+const STRAIGHT_THREE = ['...XO', 'XXXXO', 'OOOOO']
+
+// The same on the side, a larger group.
+const SIDE_THREE = [
+  'OXXXXX...XXXXXO',
+  'OXXXXXXXXXXXXXO',
+  'OXXXXXXXXXXXXXO',
+  'OOOOOOOOOOOOOOO',
+]
+
+// Black ring in the centre: no room around it for Black's territory.
+const CENTRE_RING = ['OOOOOOO', 'OXXXXXO', 'OX...XO', 'OXXXXXO', 'OOOOOOO']
+
+// Area score (Tromp-Taylor), Black minus White: stones plus empty regions
+// that reach only one colour.
+function areaScore(signMap) {
+  let board = new Board(signMap)
+  let seen = new Set()
+  let score = 0
+
+  for (let y = 0; y < signMap.length; y++) {
+    for (let x = 0; x < signMap[y].length; x++) {
+      let sign = signMap[y][x]
+      if (sign !== 0) {
+        score += sign
+        continue
+      }
+      if (seen.has(`${x},${y}`)) continue
+
+      let region = board.getConnectedComponent(
+        [x, y],
+        (v) => board.get(v) === 0,
+      )
+      let borders = new Set()
+
+      for (let v of region) {
+        seen.add(`${v[0]},${v[1]}`)
+        for (let [nx, ny] of board.getNeighbors(v)) {
+          if (signMap[ny][nx] !== 0) borders.add(signMap[ny][nx])
+        }
+      }
+
+      if (borders.size === 1) score += [...borders][0] * region.length
+    }
+  }
+
+  return score
+}
+
+// Final positions of a framed problem: the defender playing the vital point
+// and living, or the attacker playing it and the defender's stones in the
+// window removed as dead.
+function outcomes(map, frame, [vx, vy]) {
+  let defender = -frame.attacker
+  let alive = map.map((row) => [...row])
+  alive[vy][vx] = defender
+
+  let dead = map.map((row) => [...row])
+  dead[vy][vx] = frame.attacker
+  for (let [x, y] of getWindowVertices(frame.window)) {
+    if (dead[y][x] === defender) dead[y][x] = 0
+  }
+
+  return {
+    alive: applyTsumegoFrame(frame, map, alive),
+    dead: applyTsumegoFrame(frame, map, dead),
+  }
+}
 
 function distanceFromWindow([x, y], {rangeX, rangeY}) {
   return Math.max(rangeX[0] - x, x - rangeX[1], rangeY[0] - y, y - rangeY[1], 0)
@@ -161,6 +233,47 @@ describe('tsumegoframe', () => {
       }
     })
 
+    it('sets komi so the defender wins by living and loses by dying', () => {
+      // The komi model counts area at the midpoint between the two outcomes,
+      // with the gap going to the attacker. Scored by area, the outcomes
+      // should sit symmetrically around zero, at least a few points away.
+      for (let [rows, opts, vital] of [
+        [STRAIGHT_THREE, {}, [1, 0]],
+        [SIDE_THREE, {left: 2}, [9, 0]],
+        [STRAIGHT_THREE, {left: 0, top: 0, size: 13}, [1, 0]],
+      ]) {
+        for (let defender of [1, -1]) {
+          let rowsFor = rows.map((row) =>
+            defender > 0
+              ? row
+              : row.replace(/X|O/g, (c) => (c === 'X' ? 'O' : 'X')),
+          )
+          let map = position(opts.size ?? 19, rowsFor, opts)
+          let frame = getTsumegoFrame(map, {attacker: -defender})
+          let {alive, dead} = outcomes(map, frame, vital)
+
+          checkFrame(map, frame)
+
+          let lead = (signMap) => defender * (areaScore(signMap) - frame.komi)
+          let [won, lost] = [lead(alive), lead(dead)]
+          let label = `${rows[0]} size ${opts.size ?? 19} defender ${defender}`
+
+          assert.ok(won >= 5, `${label}: alive defender leads by ${won}`)
+          assert.ok(lost <= -5, `${label}: dead defender leads by ${lost}`)
+          assert.ok(Math.abs(won + lost) <= 2, `${label}: ${won} vs ${lost}`)
+        }
+      }
+    })
+
+    it('returns null when balancing would need too large a komi', () => {
+      let map = position(19, CENTRE_RING, {left: 6, top: 7})
+
+      assert.strictEqual(getTsumegoFrame(map, {attacker: -1}), null)
+
+      let frame = getTsumegoFrame(map, {attacker: -1, maxKomi: Infinity})
+      assert.ok(Math.abs(frame.komi) > 250, `komi ${frame.komi}`)
+    })
+
     it('frames a problem away from the corner on the side', () => {
       let map = position(19, SIDE, {left: 5})
       let frame = getTsumegoFrame(map)
@@ -264,6 +377,30 @@ describe('tsumegoframe', () => {
       let copy = map.map((row) => [...row])
       getTsumegoFrame(map)
       assert.deepStrictEqual(map, copy)
+    })
+  })
+
+  describe('estimateLivingArea', () => {
+    let window = {rangeX: [0, 6], rangeY: [0, 4]}
+    let area = (rows) =>
+      estimateLivingArea(position(19, rows), 1, window.rangeX, window.rangeY)
+
+    it('counts stones and the eye space they enclose', () => {
+      // 5 stones around a straight three
+      assert.strictEqual(area(STRAIGHT_THREE), 8)
+      // 7 stones around five points on the edge
+      assert.strictEqual(area(['.....XO', 'XXXXXXO', 'OOOOOOO']), 12)
+    })
+
+    it('counts attacker stones inside the eye space', () => {
+      assert.strictEqual(area(['.O.XO', 'XXXXO', 'OOOOO']), 8)
+    })
+
+    it('assumes three points when the eye space is still open', () => {
+      // The edge points reach the window's open side past [4, 0]
+      assert.strictEqual(area(['.....', 'XXXX.', 'OOOOO']), 4 + 3)
+      // A single enclosed point is still less than a living group needs
+      assert.strictEqual(area(['.XO', 'XXO', 'OOO']), 3 + 3)
     })
   })
 
