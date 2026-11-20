@@ -23,11 +23,18 @@
 // gets empty points on a lattice as eyes; a frame group that still ends up
 // with fewer than two eyes is given to the other colour, and failing that,
 // removed. Komi is set from area counts so that the game is even at the
-// midpoint between "the defender lives" and "the defender dies".
+// midpoint between "the defender lives" and "the defender dies". The komi
+// model and its calibration against KataGo: docs/tsumego-frame.md.
 
 const WALL_END = 4 // last wall line, as a distance from the window
 const MIN_DEFENDER_BLOCK = 12 // smaller defender territory is not worth a block
 const MAX_WINDOW_SHARE = 0.5 // no frame if the window covers more of the board
+const MIN_EYE_SPACE = 3 // a stone on the vital point plus two eyes
+// No frame if balancing it takes a larger komi. KataGo scored the calibration
+// cases accurately up to komi 209 (a 13x13 window in a 19x19 corner) and
+// wrongly at 335 and more (centre windows, where the defender gets no
+// territory); see scripts/frame-calibration.
+const MAX_KOMI = 250
 
 /**
  * Infer the attacker from a problem's text, e.g. "Black to live" or
@@ -109,6 +116,8 @@ export function guessAttacker(signMap, vertices) {
  * @param {string} [options.text] - problem text for inferAttackerFromText
  * @param {number} [options.toPlay] - 1 or -1
  * @param {number} [options.margin] - lines added around the problem's stones
+ * @param {number} [options.maxKomi] - no frame when balancing it takes a
+ *   larger komi
  * @returns {null | {
  *   signMap: number[][],
  *   komi: number,
@@ -120,7 +129,14 @@ export function guessAttacker(signMap, vertices) {
  */
 export function getTsumegoFrame(
   signMap,
-  {window = {}, attacker = null, text = '', toPlay = 0, margin = 2} = {},
+  {
+    window = {},
+    attacker = null,
+    text = '',
+    toPlay = 0,
+    margin = 2,
+    maxKomi = MAX_KOMI,
+  } = {},
 ) {
   let height = signMap.length
   let width = signMap[0].length
@@ -217,25 +233,17 @@ export function getTsumegoFrame(
   }
 
   // Defender territory: the points farthest from the window, as many as make
-  // the midpoint even before komi.
+  // the midpoint even before komi (see the komi below).
 
-  let defenderInWindow = problemStones.filter(
-    ([x, y]) => signMap[y][x] === defender,
-  ).length
-  let livingArea = 2 * defenderInWindow // rough area of a living defender
+  let livingArea = estimateLivingArea(signMap, defender, rangeX, rangeY)
   let contextArea = (sign) =>
     contextStones.filter(([x, y]) => signMap[y][x] === sign).length
-  let wallSize = countZone(zone, attacker) - territory.length
-  let surplus =
-    wallSize +
-    territory.length +
-    windowSize -
-    livingArea +
-    contextArea(attacker) -
-    contextArea(defender)
   let defenderSize = Math.max(
     0,
-    Math.min(territory.length, Math.round(surplus / 2)),
+    Math.min(
+      territory.length,
+      Math.round((width * height - livingArea) / 2 - contextArea(defender)),
+    ),
   )
 
   if (defenderSize < MIN_DEFENDER_BLOCK) defenderSize = 0
@@ -280,19 +288,22 @@ export function getTsumegoFrame(
     }
   }
 
-  // Komi: area at the midpoint between the defender living (with about
-  // livingArea points of the window) and dying (attacker takes the window).
+  // Komi: area at the midpoint between the defender living (with livingArea
+  // points of the window) and dying (the attacker takes the window). Outside
+  // the window the defender holds its frame zone and context stones; every
+  // other point, the gap included, ends up the attacker's. So at the midpoint
+  // the defender has D + L/2 of the N points, the attacker N - D - L/2, and the
+  // difference is 2D + L - N.
 
-  let area = {
-    [attacker]:
-      countZone(frame.zone, attacker) +
-      contextArea(attacker) +
-      windowSize -
-      livingArea / 2,
-    [defender]:
-      countZone(frame.zone, defender) + contextArea(defender) + livingArea / 2,
-  }
-  let komi = Math.floor(area[1] - area[-1]) + 0.5
+  let defenderArea = countZone(frame.zone, defender) + contextArea(defender)
+  let difference = 2 * defenderArea + livingArea - width * height
+  let komi = Math.floor(defender * difference) + 0.5
+
+  // A komi this large means the frame found almost no room for the
+  // defender's share of territory (a centre problem). KataGo's scores were
+  // wrong there, so analyse without a frame.
+
+  if (Math.abs(komi) > maxKomi) return null
 
   return {
     signMap: result,
@@ -302,6 +313,65 @@ export function getTsumegoFrame(
     window: {rangeX, rangeY},
     frameVertices,
   }
+}
+
+/**
+ * Estimate how many points of the window a living defender owns: its stones
+ * plus its eye space, the non-defender points in the window that defender
+ * stones (and the board edge) cut off from the rest of the window's outside.
+ * Eye space still open to the outside is not yet the defender's, so at least
+ * MIN_EYE_SPACE points are assumed: the smallest group that lives adds a
+ * stone on the vital point and has two eyes.
+ *
+ * @param {number[][]} signMap
+ * @param {number} defender - 1 or -1
+ * @param {number[]} rangeX - the window
+ * @param {number[]} rangeY
+ */
+export function estimateLivingArea(signMap, defender, rangeX, rangeY) {
+  let height = signMap.length
+  let width = signMap[0].length
+  let [x0, x1] = rangeX
+  let [y0, y1] = rangeY
+  let inWindow = (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1
+  let seen = makeGrid(width, height, false)
+  let stones = 0
+  let eyeSpace = 0
+
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      if (signMap[y][x] === defender) {
+        stones++
+        continue
+      }
+      if (seen[y][x]) continue
+
+      // A region of non-defender points; open if it reaches past the window.
+      let size = 0
+      let open = false
+      let stack = [[x, y]]
+      seen[y][x] = true
+
+      while (stack.length > 0) {
+        let [cx, cy] = stack.pop()
+        size++
+
+        for (let [nx, ny] of neighbors(cx, cy, width, height)) {
+          if (!inWindow(nx, ny)) {
+            open = true
+            continue
+          }
+          if (signMap[ny][nx] === defender || seen[ny][nx]) continue
+          seen[ny][nx] = true
+          stack.push([nx, ny])
+        }
+      }
+
+      if (!open) eyeSpace += size
+    }
+  }
+
+  return stones + Math.max(eyeSpace, MIN_EYE_SPACE)
 }
 
 /**
