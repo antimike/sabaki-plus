@@ -12,6 +12,7 @@ import i18n from '../i18n.js'
 import {getBoard, getRootProperty} from './gametree.js'
 import {noop, equals} from './helper.js'
 import {parseAnalysis} from './analysis.js'
+import {restrictAnalysisToWindow} from './tsumegoframe.js'
 
 const t = i18n.context('EngineSyncer')
 const setting = {
@@ -19,6 +20,19 @@ const setting = {
 }
 
 const alpha = 'ABCDEFGHJKLMNOPQRSTUVWXYZ'
+
+// Rules for a framed position: the frame's komi assumes area scoring. No
+// handicap bonus, because KataGo may count the frame's opening run of Black
+// stones as handicap stones.
+const frameRules = JSON.stringify({
+  scoring: 'AREA',
+  ko: 'SIMPLE',
+  tax: 'NONE',
+  suicide: false,
+  hasButton: false,
+  whiteHandicapBonus: '0',
+  friendlyPassOk: true,
+})
 const quitTimeout = setting.get('gtp.engine_quit_timeout')
 
 function parseVertex(coord, size) {
@@ -40,8 +54,13 @@ export default class EngineSyncer extends EventEmitter {
     this._busy = false
     this._suspended = true
     this._analysis = null
+    this._rules = null
+    this._defaultRules = null
 
     this.id = uuid()
+    // The window of the hidden tsumego frame in the synced position, or null
+    // when the position was synced without a frame.
+    this.analysisWindow = null
     this.engine = engine
     this.commands = []
     this.treePosition = null
@@ -71,6 +90,8 @@ export default class EngineSyncer extends EventEmitter {
     this.controller.on('started', () => {
       this.treePosition = null
       this.analysis = null
+      this._rules = null
+      this._defaultRules = null
 
       Promise.all([
         this.controller.sendCommand({name: 'name'}),
@@ -114,12 +135,19 @@ export default class EngineSyncer extends EventEmitter {
           let winrateFormat = command.name.startsWith('kata')
             ? 'float'
             : 'integer'
+          let analysisWindow = this.analysisWindow
 
           subscribe(({line}) => {
             // Parse analysis info
 
             if (line.startsWith('info ')) {
               let variations = parseAnalysis(line, board, winrateFormat)
+              if (analysisWindow != null) {
+                variations = restrictAnalysisToWindow(
+                  variations,
+                  analysisWindow,
+                )
+              }
               // Ignore an update with no parseable variations rather than let
               // Math.max(...[]) === -Infinity become a non-finite SBKV.
               if (variations.length === 0) return
@@ -234,7 +262,50 @@ export default class EngineSyncer extends EventEmitter {
     return await this.stateTracker.queueCommand(...args)
   }
 
-  async sync(tree, id) {
+  // Sets the engine's rules (KataGo only): a kata-set-rules argument, or null
+  // for the rules the engine started with.
+  async _setRules(rules) {
+    if (!(await this.stateTracker.knowsCommand('kata-set-rules'))) return
+
+    if (this._defaultRules == null) {
+      let response = await this.stateTracker.queueCommand({
+        name: 'kata-get-rules',
+      })
+      if (response == null || response.error) return
+
+      this._defaultRules = response.content.trim()
+      this._rules = this._defaultRules
+    }
+
+    if (rules == null) rules = this._defaultRules
+    if (rules === this._rules) return
+
+    let response = await this.stateTracker.queueCommand({
+      name: 'kata-set-rules',
+      args: [rules],
+    })
+
+    if (response == null || response.error) {
+      // Rules the engine doesn't know (an unusual RU): use its own.
+      if (rules !== this._defaultRules) return await this._setRules(null)
+      return
+    }
+
+    this._rules = rules
+  }
+
+  /**
+   * Sync the engine to the position at `id`.
+   *
+   * With `frame` (from applyTsumegoFrame and getTsumegoFrame), the engine gets
+   * the framed position, the frame's komi and area rules; its analysis is kept
+   * inside `frame.window`. Without it, the engine gets the position as it is,
+   * with the game's komi and rules.
+   *
+   * @param {object} [options.frame] - {signMap, frameVertices, komi, window},
+   *   where signMap is the framed position at `id`
+   */
+  async sync(tree, id, {frame = null} = {}) {
     this.sendAbort()
     let board = getBoard(tree, id)
 
@@ -253,6 +324,7 @@ export default class EngineSyncer extends EventEmitter {
     }
 
     let komi = +getRootProperty(tree, 'KM', 0)
+    let rules = getRootProperty(tree, 'RU')
     let boardsize = [board.width, board.height]
 
     // Replay
@@ -261,6 +333,32 @@ export default class EngineSyncer extends EventEmitter {
     let engineBoard = newBoard(board.width, board.height)
     let history = []
     let boardSynced = true
+
+    if (frame != null) {
+      // Frame stones first, then the game as usual. The frame never touches
+      // the problem's stones, so they can be played in any order.
+
+      board = board.clone()
+      for (let [x, y] of frame.frameVertices) {
+        board.set([x, y], frame.signMap[y][x])
+      }
+      nodeBoard = board
+
+      for (let vertex of frame.frameVertices) {
+        let sign = board.get(vertex)
+
+        history.push({
+          name: 'play',
+          args: [sign > 0 ? 'B' : 'W', board.stringifyVertex(vertex)],
+        })
+        engineBoard = engineBoard.makeMove(sign, vertex)
+      }
+
+      komi = frame.komi
+      rules = frameRules
+    } else if (rules != null) {
+      rules = rules.trim().toLowerCase().replace(/\s+/g, '-')
+    }
     let nodes = [...tree.listNodesVertically(id, -1, {})].reverse()
 
     for (let node of nodes) {
@@ -393,12 +491,14 @@ export default class EngineSyncer extends EventEmitter {
     }
 
     try {
+      await this._setRules(rules || null)
       await this.stateTracker.sync({komi, boardsize, history})
     } catch (err) {
       throw new Error(t('GTP engine can’t be synced to current state.'))
     }
 
     this.treePosition = id
+    this.analysisWindow = frame != null ? frame.window : null
     this.analysis = null
   }
 }

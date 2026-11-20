@@ -101,9 +101,14 @@ Notes:
 5. **Analysis interval.** Sabaki sends `kata-analyze <color> 50`
    (`board.analysis_interval`, in centiseconds), so the heatmap updates twice a
    second.
-6. **Whole board only for now.** Without the hidden tsumego frame and the move
-   restriction (`baduk` D5), KataGo plays big points elsewhere on the board
-   instead of the problem area.
+6. **Tsumego frame.** By default, analysis sends KataGo the problem with a
+   hidden tsumego frame (`baduk` D5, `src/modules/tsumegoframe.js`) built for
+   the root position: the frame's komi, area rules (`kata-set-rules`) and
+   `allow` clauses that keep candidates and best lines inside the window. The
+   frame is never drawn. Engines → Whole-Board Analysis
+   (`board.analysis_whole_board`) turns it off: no frame, no `allow`, the
+   problem's own `KM` and `RU` (or the engine's rules without `RU`). Without
+   the frame, KataGo plays big points elsewhere on the board.
 
 ## Public repo: no copyrighted SGF
 

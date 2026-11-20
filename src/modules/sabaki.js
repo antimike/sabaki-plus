@@ -19,6 +19,11 @@ import * as gobantransformer from './gobantransformer.js'
 import * as gtplogger from './gtplogger.js'
 import * as helper from './helper.js'
 import * as sound from './sound.js'
+import {
+  applyTsumegoFrame,
+  getTsumegoFrame,
+  getWindowVertices,
+} from './tsumegoframe.js'
 
 deadstones.useFetch('./node_modules/@sabaki/deadstones/wasm/deadstones_bg.wasm')
 
@@ -75,6 +80,7 @@ class Sabaki extends EventEmitter {
       analysisValueType: null,
       coordinatesType: null,
       showAnalysis: null,
+      wholeBoardAnalysis: null,
       showCoordinates: null,
       showMoveColorization: null,
       showMoveNumbers: null,
@@ -314,6 +320,7 @@ class Sabaki extends EventEmitter {
       'board.analysis_type': 'analysisType',
       'board.analysis_value_type': 'analysisValueType',
       'board.show_analysis': 'showAnalysis',
+      'board.analysis_whole_board': 'wholeBoardAnalysis',
       'theme.current': 'currentThemeId',
       'view.show_menubar': 'showMenuBar',
       'view.show_coordinates': 'showCoordinates',
@@ -2030,14 +2037,14 @@ class Sabaki extends EventEmitter {
     )
   }
 
-  async syncEngine(syncerId, treePosition) {
+  async syncEngine(syncerId, treePosition, {frame = null} = {}) {
     let syncer = this.state.attachedEngineSyncers.find(
       (syncer) => syncer.id === syncerId,
     )
 
     if (syncer != null) {
       try {
-        await syncer.sync(this.inferredState.gameTree, treePosition)
+        await syncer.sync(this.inferredState.gameTree, treePosition, {frame})
         return true
       } catch (err) {
         await dialog.showMessageBox(err.message, 'error')
@@ -2249,13 +2256,47 @@ class Sabaki extends EventEmitter {
     }
   }
 
+  // The hidden tsumego frame for analysing `treePosition` (baduk D5): built
+  // for the problem's starting position (the root node, with its VW) and put
+  // onto the current one. Null for whole-board analysis, or when no frame
+  // applies.
+  getAnalysisFrame(treePosition) {
+    if (setting.get('board.analysis_whole_board')) return null
+
+    let tree = this.inferredState.gameTree
+    let rootId = tree.root.id
+    let startBoard = gametree.getBoard(tree, rootId)
+    let rootData = tree.root.data
+    let text = [rootData.GN, rootData.C]
+      .filter((x) => x != null)
+      .map((x) => x[0])
+      .join('\n')
+
+    let frame = getTsumegoFrame(startBoard.signMap, {
+      window: gametree.getViewRange(tree, rootId, startBoard),
+      text,
+      toPlay: this.getPlayer(rootId),
+    })
+    if (frame == null) return null
+
+    let signMap = applyTsumegoFrame(
+      frame,
+      startBoard.signMap,
+      gametree.getBoard(tree, treePosition).signMap,
+    )
+    if (signMap == null) return null
+
+    return {...frame, signMap}
+  }
+
   async analyzeMove(treePosition) {
     let sign = this.getPlayer(treePosition)
     let color = sign > 0 ? 'B' : 'W'
     let syncer = this.inferredState.analyzingEngineSyncer
     if (syncer == null || syncer.suspended) return
 
-    let synced = await this.syncEngine(syncer.id, treePosition)
+    let frame = this.getAnalysisFrame(treePosition)
+    let synced = await this.syncEngine(syncer.id, treePosition, {frame})
     if (!synced) return
 
     let commandName = setting
@@ -2264,13 +2305,44 @@ class Sabaki extends EventEmitter {
     if (commandName == null) return
 
     let interval = setting.get('board.analysis_interval').toString()
+    let args = [color, interval]
+
+    if (frame != null && commandName !== 'analyze') {
+      // Candidates and best lines stay in the window, for both players at
+      // every depth. Passing is allowed so a line can end.
+
+      let board = gametree.getBoard(this.inferredState.gameTree, treePosition)
+      let coords = [
+        ...getWindowVertices(frame.window).map((v) => board.stringifyVertex(v)),
+        'pass',
+      ].join(',')
+
+      for (let player of [color, sign > 0 ? 'W' : 'B']) {
+        args.push('allow', player, coords, '1000')
+      }
+    }
 
     try {
       syncer.queueCommand({
         name: commandName,
-        args: [color, interval],
+        args,
       })
     } catch (err) {}
+  }
+
+  // Analyse the current position again, e.g. after the frame was switched on
+  // or off.
+  restartAnalysis() {
+    if (this.state.analyzingEngineSyncerId == null) return
+    if (
+      this.state.engineGameOngoing &&
+      [this.state.blackEngineSyncerId, this.state.whiteEngineSyncerId].includes(
+        this.state.analyzingEngineSyncerId,
+      )
+    )
+      return
+
+    this.analyzeMove(this.state.treePosition)
   }
 
   async startAnalysis(syncerId) {
