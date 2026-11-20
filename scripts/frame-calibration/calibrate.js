@@ -17,7 +17,10 @@
 //
 // Usage (from the repo root):
 //   npx tsx scripts/frame-calibration/calibrate.js [--visits N] [--json FILE]
-//     [--katago BIN] [--model FILE] [--case NAME]
+//     [--katago BIN] [--model FILE] [--case NAME] [--max-komi K]
+//
+// --max-komi lifts getTsumegoFrame's komi limit (e.g. Infinity), to measure
+// the cases that would otherwise get no frame.
 //
 // Needs KataGo (default ~/.local/bin/katago) and a network (default
 // ~/.local/share/katago/models/b10c384h6nbttflrs.bin.gz). Not part of npm test.
@@ -60,12 +63,14 @@ function parseArgs(argv) {
     ),
     config: join(here, 'analysis.cfg'),
     case: null,
+    'max-komi': null,
   }
 
   for (let i = 0; i < argv.length; i++) {
     let key = argv[i].replace(/^--/, '')
     if (!(key in args)) throw new Error(`unknown option ${argv[i]}`)
-    args[key] = key === 'visits' ? Number(argv[++i]) : argv[++i]
+    let numeric = key === 'visits' || key === 'max-komi'
+    args[key] = numeric ? Number(argv[++i]) : argv[++i]
   }
 
   return args
@@ -152,16 +157,27 @@ function ownershipByRegion(ownership, window, size, defender) {
 async function main() {
   let args = parseArgs(process.argv.slice(2))
   let engine = startEngine(args)
-  let size = 19
   let jobs = []
 
   for (let c of cases) {
     if (args.case != null && c.name !== args.case) continue
 
+    let size = c.size ?? 19
+
     for (let defender of [1, -1]) {
       let attacker = -defender
-      let start = caseSignMap(c, defender, size)
-      let frame = getTsumegoFrame(start, {attacker, toPlay: defender})
+      let start = caseSignMap(c, defender)
+      let options = {attacker, toPlay: defender}
+      if (args['max-komi'] != null) options.maxKomi = args['max-komi']
+
+      let frame = getTsumegoFrame(start, options)
+      let label = `${c.name}/${defender > 0 ? 'B' : 'W'}`
+
+      if (frame == null) {
+        jobs.push({case: c.name, defender: label.slice(-1), frame: false})
+        continue
+      }
+
       let [vx, vy] = c.vital
       let settled = (sign) => {
         let map = start.map((row) => [...row])
@@ -173,7 +189,6 @@ async function main() {
         alive: {signMap: settled(defender), toPlay: attacker},
         dead: {signMap: settled(attacker), toPlay: defender},
       }
-      let label = `${c.name}/${defender > 0 ? 'B' : 'W'}`
 
       let queries = Object.entries(positions).map(([kind, {signMap, toPlay}]) =>
         engine
@@ -197,6 +212,7 @@ async function main() {
           let result = {
             case: c.name,
             defender: defender > 0 ? 'B' : 'W',
+            frame: true,
             defenderStones: c.rows.join('').split('X').length - 1,
             window: frame.window,
             windowSize:
@@ -250,6 +266,11 @@ async function main() {
   )
 
   for (let r of results) {
+    if (!r.frame) {
+      console.log(`${r.case.padEnd(16)} ${r.defender.padStart(3)}  no frame`)
+      continue
+    }
+
     let w = r.alive.regions.window
     console.log(
       [
