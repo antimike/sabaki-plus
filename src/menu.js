@@ -32,6 +32,7 @@ exports.get = function (props = {}) {
     analysisType,
     analysisValueType,
     showAnalysis,
+    wholeBoardAnalysis,
     showCoordinates,
     coordinatesType,
     showMoveNumbers,
@@ -524,6 +525,15 @@ exports.get = function (props = {}) {
             } else {
               sabaki.stopAnalysis()
             }
+          },
+        },
+        {
+          label: i18n.t('menu.engines', '&Whole-Board Analysis'),
+          type: 'checkbox',
+          checked: !!wholeBoardAnalysis,
+          click: () => {
+            toggleSetting('board.analysis_whole_board')
+            sabaki.restartAnalysis()
           },
         },
         {

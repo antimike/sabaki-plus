@@ -361,6 +361,7 @@ class App extends Component {
         analysisType: state.analysisType,
         analysisValueType: state.analysisValueType,
         showAnalysis: state.showAnalysis,
+        wholeBoardAnalysis: state.wholeBoardAnalysis,
         showCoordinates: state.showCoordinates,
         coordinatesType: state.coordinatesType,
         showMoveNumbers: state.showMoveNumbers,
