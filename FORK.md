@@ -51,6 +51,11 @@ Notes:
 4. Before the argv fix (branch `fix/argv-dot-slash`), `electron ./` and
    therefore `npm start` treated `./` as the file to open. With the fix both `.`
    and `./` work.
+5. `e2e/frame-analysis.spec.js` runs a real KataGo and is skipped unless
+   `SABAKI_E2E_KATAGO` names the binary; `SABAKI_E2E_KATAGO_ARGS` holds its
+   arguments, for example
+   `gtp -model ~/.local/share/katago/models/<net>.bin.gz -config ~/.config/katago/gtp.cfg`
+   (expand `~` yourself). It takes about 15 s on a Quadro T1000 with OpenCL.
 
 ## Settings folder: keep dev runs apart from an installed Sabaki
 
