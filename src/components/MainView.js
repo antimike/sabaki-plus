@@ -170,6 +170,9 @@ export default class MainView extends Component {
               ? selectedTool
               : null,
           transformation: boardTransformation,
+          // Fork (baduk D5): show what the engine may play in, the frame's
+          // window, whether or not an engine is attached
+          cropWindow: sabaki.getProblemFrame(gameTree)?.window ?? null,
 
           onVertexClick: this.handleGobanVertexClick,
           onLineDraw: this.handleGobanLineDraw,

@@ -84,5 +84,10 @@ module.exports = defineConfig({
       testMatch: /heatmap-label-font\.spec\.js/,
       dependencies: ['smoke'],
     },
+    {
+      name: 'frame-crop',
+      testMatch: /frame-crop\.spec\.js/,
+      dependencies: ['smoke'],
+    },
   ],
 })

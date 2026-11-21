@@ -2256,14 +2256,19 @@ class Sabaki extends EventEmitter {
     }
   }
 
-  // The hidden tsumego frame for analysing `treePosition` (baduk D5): built
-  // for the problem's starting position (the root node, with its VW) and put
-  // onto the current one. Null for whole-board analysis, or when no frame
-  // applies.
-  getAnalysisFrame(treePosition) {
+  // The hidden tsumego frame for the problem in `tree` (baduk D5), built for
+  // its starting position: the root node, with its VW. Null for whole-board
+  // analysis, or when no frame applies. Both the analysis (`allow`) and the
+  // board crop take their window from here, so they cannot drift apart.
+  //
+  // Trees are immutable and every edit makes a new one, so the frame is
+  // cached per tree object: navigating and analysis updates reuse it.
+  getProblemFrame(tree = this.inferredState.gameTree) {
     if (setting.get('board.analysis_whole_board')) return null
 
-    let tree = this.inferredState.gameTree
+    this._problemFrames ??= new WeakMap()
+    if (this._problemFrames.has(tree)) return this._problemFrames.get(tree)
+
     let rootId = tree.root.id
     let startBoard = gametree.getBoard(tree, rootId)
     let rootData = tree.root.data
@@ -2277,8 +2282,19 @@ class Sabaki extends EventEmitter {
       text,
       toPlay: this.getPlayer(rootId),
     })
+
+    this._problemFrames.set(tree, frame)
+    return frame
+  }
+
+  // The problem frame put onto the position at `treePosition`, for the
+  // engine. Null when there is no frame or it cannot be applied there.
+  getAnalysisFrame(treePosition) {
+    let tree = this.inferredState.gameTree
+    let frame = this.getProblemFrame(tree)
     if (frame == null) return null
 
+    let startBoard = gametree.getBoard(tree, tree.root.id)
     let signMap = applyTsumegoFrame(
       frame,
       startBoard.signMap,

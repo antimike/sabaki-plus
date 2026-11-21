@@ -239,6 +239,7 @@ export default class Goban extends Component {
 
       drawLineMode = null,
       transformation = '',
+      cropWindow = null,
       currentThemeId,
     },
     {
@@ -280,14 +281,18 @@ export default class Goban extends Component {
         board.height,
       )
 
-    // Crop to the SGF VW window
+    // Crop to `cropWindow` (the tsumego frame's window) when given, otherwise
+    // to the SGF VW window
 
-    let {rangeX, rangeY} = gametree.getViewRange(
-      gameTree,
-      treePosition,
-      board,
-      transformation,
-    )
+    let {rangeX, rangeY} =
+      cropWindow != null
+        ? gobantransformer.transformRange(
+            cropWindow,
+            transformation,
+            board.width,
+            board.height,
+          )
+        : gametree.getViewRange(gameTree, treePosition, board, transformation)
 
     // Calculate coordinates
 

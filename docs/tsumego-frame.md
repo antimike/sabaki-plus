@@ -29,6 +29,12 @@ Frame groups get eyes on a fixed lattice; a group left with fewer than two is
 given to the other colour or removed. Stones outside the window (context stones)
 are kept, with the points around them left empty.
 
+The window is also what the board shows and where the engine may play (`allow`).
+`sabaki.getProblemFrame` builds the frame once per game tree, and both the
+analysis and the board crop (`MainView` → `Goban`'s `cropWindow`) read its
+window, so the two cannot drift. Without a frame (none applies, or whole-board
+analysis is on) the board falls back to the plain `VW` crop.
+
 ## Balance: where komi comes from
 
 Under area scoring every point of a finished board belongs to one side (neutral
