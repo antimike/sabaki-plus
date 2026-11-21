@@ -88,6 +88,25 @@ export function transformVertex([x, y], transformation, width, height) {
   return [(nx + newWidth) % newWidth, (ny + newHeight) % newHeight]
 }
 
+// Transforms a board range {rangeX, rangeY} (as BoundedGoban takes it) by
+// transforming its corners. An empty range {} (the whole board) stays empty.
+export function transformRange(range, transformation, width, height) {
+  let {rangeX, rangeY} = range
+  if (rangeX == null || rangeY == null) return {}
+
+  let corners = [
+    [rangeX[0], rangeY[0]],
+    [rangeX[1], rangeY[1]],
+  ].map((v) => transformVertex(v, transformation, width, height))
+  let xs = corners.map(([x, _]) => x)
+  let ys = corners.map(([_, y]) => y)
+
+  return {
+    rangeX: [Math.min(...xs), Math.max(...xs)],
+    rangeY: [Math.min(...ys), Math.max(...ys)],
+  }
+}
+
 export function transformLine(line, transformation, width, height) {
   let transform = (v) => transformVertex(v, transformation, width, height)
 
