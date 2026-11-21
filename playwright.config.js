@@ -89,5 +89,10 @@ module.exports = defineConfig({
       testMatch: /frame-crop\.spec\.js/,
       dependencies: ['smoke'],
     },
+    {
+      name: 'frame-analysis',
+      testMatch: /frame-analysis\.spec\.js/,
+      dependencies: ['smoke'],
+    },
   ],
 })
