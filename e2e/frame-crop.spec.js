@@ -112,3 +112,149 @@ test.describe('board crop to the tsumego frame window', () => {
     expect((await shownRange(page)).count).toBe(19 * 19)
   })
 })
+
+// Fork-only (baduk D5, kata tfg1): Engines > Tsumego Frame holds the
+// whole-board switch, a session-only attacker override and Show Frame.
+
+// The Tsumego Frame submenu as the main process built it, '&' stripped.
+async function frameMenu(electronApp) {
+  return electronApp.evaluate(({Menu}) => {
+    let strip = (label) => label.replace(/&/g, '')
+    let engines = Menu.getApplicationMenu().items.find(
+      (item) => strip(item.label) === 'Engines',
+    )
+    let frame = engines.submenu.items.find(
+      (item) => strip(item.label) === 'Tsumego Frame',
+    )
+
+    return frame.submenu.items
+      .filter((item) => item.type !== 'separator')
+      .map((item) => ({
+        label: strip(item.label),
+        checked: item.checked,
+        enabled: item.enabled,
+      }))
+  })
+}
+
+async function clickFrameMenu(electronApp, prefix) {
+  await electronApp.evaluate(({Menu, BrowserWindow}, prefix) => {
+    let strip = (label) => label.replace(/&/g, '')
+    let engines = Menu.getApplicationMenu().items.find(
+      (item) => strip(item.label) === 'Engines',
+    )
+    let frame = engines.submenu.items.find(
+      (item) => strip(item.label) === 'Tsumego Frame',
+    )
+    let item = frame.submenu.items.find((item) =>
+      strip(item.label).startsWith(prefix),
+    )
+
+    item.click(undefined, BrowserWindow.getAllWindows()[0])
+  }, prefix)
+}
+
+// The menu is rebuilt over IPC after each render, so poll for it.
+async function expectFrameMenu(electronApp, expected) {
+  await expect
+    .poll(async () => {
+      let items = await frameMenu(electronApp)
+      return Object.fromEntries(
+        items.map(({label, checked, enabled}) => [label, {checked, enabled}]),
+      )
+    })
+    .toMatchObject(expected)
+}
+
+test.describe('tsumego frame controls', () => {
+  test.afterEach(async ({page}) => {
+    await setWholeBoard(page, false)
+  })
+
+  test('auto attacker shows its colour and source', async ({
+    electronApp,
+    page,
+  }) => {
+    await setWholeBoard(page, false)
+    await loadSgfStringAndWait(page, CORNER)
+    await waitForRender(page)
+
+    await expectFrameMenu(electronApp, {
+      'Whole-Board Analysis': {checked: false, enabled: true},
+      'Attacker: Auto (Black, from text)': {checked: true, enabled: true},
+      'Attacker: Black': {checked: false, enabled: true},
+      'Attacker: White': {checked: false, enabled: true},
+      'Show Frame': {checked: false, enabled: true},
+    })
+  })
+
+  test('the attacker override applies to this game only', async ({
+    electronApp,
+    page,
+  }) => {
+    await setWholeBoard(page, false)
+    await loadSgfStringAndWait(page, CORNER)
+    await waitForRender(page)
+
+    await clickFrameMenu(electronApp, 'Attacker: White')
+    await expectFrameMenu(electronApp, {
+      'Attacker: Auto (Black, from text)': {checked: false},
+      'Attacker: White': {checked: true},
+    })
+
+    let frame = await page.evaluate(() => {
+      let f = window.__sabaki.getProblemFrame()
+      return {attacker: f.attacker, source: f.attackerSource}
+    })
+    expect(frame).toEqual({attacker: -1, source: 'option'})
+
+    // A new move makes a new tree with the same root: the override stays.
+    let treeChanged = await page.evaluate(async () => {
+      let before = window.__sabaki.inferredState.gameTree
+      await window.__sabaki.makeMove([10, 10])
+      return window.__sabaki.inferredState.gameTree !== before
+    })
+    expect(treeChanged).toBe(true)
+    expect(
+      await page.evaluate(() => window.__sabaki.getProblemFrame().attacker),
+    ).toBe(-1)
+
+    // Another game starts on Auto.
+    await loadSgfStringAndWait(page, CORNER)
+    await waitForRender(page)
+    await expectFrameMenu(electronApp, {
+      'Attacker: Auto (Black, from text)': {checked: true},
+      'Attacker: White': {checked: false},
+    })
+
+    await page.evaluate(() => window.__sabaki.setFrameAttacker(null))
+  })
+
+  test('whole-board analysis disables the attacker choice', async ({
+    electronApp,
+    page,
+  }) => {
+    await loadSgfStringAndWait(page, CORNER)
+    await setWholeBoard(page, true)
+
+    await expectFrameMenu(electronApp, {
+      'Whole-Board Analysis': {checked: true},
+      'Attacker: Auto (Black, from text)': {enabled: false},
+      'Attacker: Black': {enabled: false},
+      'Attacker: White': {enabled: false},
+    })
+  })
+
+  test('no frame leaves a plain, disabled Auto', async ({
+    electronApp,
+    page,
+  }) => {
+    await setWholeBoard(page, false)
+    await loadSgfStringAndWait(page, WHOLE)
+    await waitForRender(page)
+
+    await expectFrameMenu(electronApp, {
+      'Attacker: Auto': {checked: true, enabled: false},
+    })
+  })
+})
