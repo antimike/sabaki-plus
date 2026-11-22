@@ -322,7 +322,7 @@ one-change rerun that makes it pass:
 | attacker       | 22  | attacker flipped (kata v2s9)                          |
 | ko             | 1   | one frame ko threat for the defender                  |
 | depth          | 0   | 10000 visits                                          |
-| frame          | 12  | none of the above passes                              |
+| frame          | 12  | none of the above passes; all `engine-dead` on rerun  |
 | outside-window | 0   | also 0 over the whole 19×19 corpus (`--window-check`) |
 | no-frame       | 0   |                                                       |
 
@@ -335,12 +335,28 @@ one-change rerun that makes it pass:
   the 22 attacker failures are among them (15%); in the other 61 there is one.
   The usual case is a Black-to-live problem guessed as Black attacking, lost for
   Black by 15 to 110 points whatever it plays.
-- **Frame.** These fail with either attacker, a ko threat and 10000 visits. Some
-  are a few points short (Cho Intermediate 0637, Maeda 1k-5k 013, Maeda 1k-1d
-  055: the defender trails by 10 to 13 after the SOL move); others are lost by
-  40 to 96 points (Cho Elementary 0340, Maeda 100 Problems 089, Maeda 10k-5k
-  123), more than komi alone explains.
-- **Ko.** Yamada Basic 1006 passes with one ko threat for the defender.
+- **Frame: the engine, not the frame (kata 9ds2).** These fail with either
+  attacker, a ko threat and 10000 visits. Framed with the side to play
+  defending, all 12 score the defender's lead after the SOL move at -L within
+  1.9 points (L the living-area estimate; Maeda 10k-5k 123: -13.6 with L 13).
+  That is the frame's score for "defender dead", so the balance is right and
+  KataGo reads the group as dead after the book move, framed and unframed (123:
+  W Q1 kills against every Black reply; Maeda 1k-5k 013: T18 T17 S17 T19). When
+  the defender does live, it leads (123 after Q2 T3 R1: +20.6). The "lost by 40
+  to 96" cases were the wrong attacker on top (123 with Black attacking: -96).
+  The harness now names these `engine-dead` (`deadAfterSol` in `firstmove.js`).
+  Two defender ko threats seem to pass 013, but that is search noise: W picks
+  S15 for +20 while T17 still kills at -12.8.
+- **Stronger network.** Rerun with kata1-tf3-b11c768-s12382M (the strongest
+  confidently rated network, 2026-11-22; 1.6× b10's time per visit on the
+  T1000): 10 of the 12 are `engine-dead` again, so b10's reading is not the
+  cause; the books' answers are probably ko or seki lines the sanderland files
+  do not mark. Two differ: Fujisawa Intermediate 45 scores -10.7 with L 22,
+  about -L/2, the defender living small (a seki-like result the frame counts as
+  a loss); Hashimoto MTAP Elementary 036 scores -19.7 with L 15, 4.7 below
+  "dead", so the defender loses more than the window there.
+- **Ko.** Yamada Basic 1006 passes with one ko threat for the defender (b10),
+  and with none under tf3.
 
 The run's per-problem results stay in `scripts/frame-calibration/results/`
 (gitignored); `firstmove.js --summary FILE` reprints these tables from one.
