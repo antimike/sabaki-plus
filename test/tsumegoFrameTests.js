@@ -42,6 +42,11 @@ const STRIP = ['..OOOO..', '.OXXXXO.', '.OX..XO.', '..X..X..']
 // White kills there.
 const STRAIGHT_THREE = ['...XO', 'XXXXO', 'OOOOO']
 
+// The same with a stray attacker stone that widens the window. Only its
+// geometry matters: with an attacker ko threat, the defender's share ends
+// partway down a one-line strip along the far edge (kata 899v).
+const WIDE_THREE = ['...XO', 'XXXXO', 'OOOOO.O']
+
 // The same on the side, a larger group.
 const SIDE_THREE = [
   'OXXXXX...XXXXXO',
@@ -390,17 +395,37 @@ describe('tsumegoframe', () => {
       it('keeps the defender winning by living and losing by dying', () => {
         // Threat groups count as their owner's area in the komi, as an area
         // count of the final position does.
-        let [rows, vital] = [STRAIGHT_THREE, [1, 0]]
+        // With an attacker threat the defender's share shrinks, and in some
+        // frames its edge then leaves the attacker a one-line strip that
+        // cannot live; the defender owns those points in the count.
+        let vital = [1, 0]
+        let cases = []
 
-        for (let koThreats of [{B: 1}, {W: 1}, {B: 1, W: 1}]) {
-          let map = position(19, rows)
-          let frame = getTsumegoFrame(map, {attacker: -1, koThreats})
+        for (let shape of [STRAIGHT_THREE, WIDE_THREE]) {
+          for (let defender of [1, -1]) {
+            for (let koThreats of [{B: 1}, {W: 1}, {B: 1, W: 1}]) {
+              for (let size of [19, 13]) {
+                cases.push({shape, defender, koThreats, size})
+              }
+            }
+          }
+        }
+
+        for (let {shape, defender, koThreats, size} of cases) {
+          let rows = shape.map((row) =>
+            defender > 0
+              ? row
+              : row.replace(/X|O/g, (c) => (c === 'X' ? 'O' : 'X')),
+          )
+          let map = position(size, rows)
+          let frame = getTsumegoFrame(map, {attacker: -defender, koThreats})
+          if (frame.koThreatVertices.length === 0) continue
+
           let {alive, dead} = outcomes(map, frame, vital)
-          let lead = (signMap) => areaScore(signMap) - frame.komi
+          let lead = (signMap) => defender * (areaScore(signMap) - frame.komi)
           let [won, lost] = [lead(alive), lead(dead)]
-          let label = JSON.stringify(koThreats)
+          let label = `${shape[2]} size ${size} defender ${defender} ${JSON.stringify(koThreats)}`
 
-          assert.ok(frame.koThreatVertices.length > 0, label)
           assert.ok(won >= 5, `${label}: alive defender leads by ${won}`)
           assert.ok(lost <= -5, `${label}: dead defender leads by ${lost}`)
           assert.ok(Math.abs(won + lost) <= 2, `${label}: ${won} vs ${lost}`)

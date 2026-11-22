@@ -377,9 +377,52 @@ export function getTsumegoFrame(
   // other point, the gap included, ends up the attacker's. So at the midpoint
   // the defender has D + L/2 of the N points, the attacker N - D - L/2, and the
   // difference is 2D + L - N. Ko threat groups count as their owner's.
+  //
+  // A frame group removed for lack of eyes leaves its points empty and in no
+  // zone. Where only defender stones surround them (an attacker strip one
+  // line wide along the edge, beyond the defender's share), the defender owns
+  // them in the count, so they belong to D.
 
-  let getKomi = ({zone}) => {
-    let defenderArea = countZone(zone, defender) + contextArea(defender)
+  let getKomi = ({zone, stones}) => {
+    let enclosed = 0
+    let seen = makeGrid(width, height, false)
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        if (seen[y][x] || zone[y][x] !== 0 || stones[y][x] !== 0) continue
+        if (distance(x, y) < 2 || blocked[y][x]) continue
+
+        let size = 0
+        let onlyDefender = true
+        let stack = [[x, y]]
+        seen[y][x] = true
+
+        while (stack.length > 0) {
+          let [cx, cy] = stack.pop()
+          size++
+
+          for (let [nx, ny] of neighbors(cx, cy, width, height)) {
+            let sign = stones[ny][nx]
+            if (sign !== 0) {
+              if (sign !== defender) onlyDefender = false
+              continue
+            }
+            if (zone[ny][nx] !== 0 || distance(nx, ny) < 2 || blocked[ny][nx]) {
+              onlyDefender = false
+              continue
+            }
+            if (seen[ny][nx]) continue
+            seen[ny][nx] = true
+            stack.push([nx, ny])
+          }
+        }
+
+        if (onlyDefender) enclosed += size
+      }
+    }
+
+    let defenderArea =
+      countZone(zone, defender) + contextArea(defender) + enclosed
     let difference = 2 * defenderArea + livingArea - width * height
     return Math.floor(defender * difference) + 0.5
   }
