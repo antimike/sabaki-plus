@@ -56,6 +56,12 @@ Notes:
    arguments, for example
    `gtp -model ~/.local/share/katago/models/<net>.bin.gz -config ~/.config/katago/gtp.cfg`
    (expand `~` yourself). It takes about 15 s on a Quadro T1000 with OpenCL.
+   `e2e/frame-auto-attacker.spec.js` needs the same variables.
+6. `e2e/private-problems.spec.js` runs the engine's attacker check on problems
+   that cannot be fixtures here (copyrighted or licensed). It also needs
+   `SABAKI_PRIVATE_PROBLEMS`, a directory outside this repo with an
+   `expected.json` that points at the problems; the format is in the spec's
+   header. MH's is `~/Documents/baduk/private-tests`.
 
 ## Settings folder: keep dev runs apart from an installed Sabaki
 

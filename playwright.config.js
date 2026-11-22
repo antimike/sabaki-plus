@@ -99,5 +99,10 @@ module.exports = defineConfig({
       testMatch: /frame-auto-attacker\.spec\.js/,
       dependencies: ['smoke'],
     },
+    {
+      name: 'private-problems',
+      testMatch: /private-problems\.spec\.js/,
+      dependencies: ['smoke'],
+    },
   ],
 })

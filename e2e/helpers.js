@@ -146,6 +146,48 @@ const enginePath = path.resolve(
   'resignEngine.js',
 )
 
+/**
+ * Fork (baduk D10): load a problem, analyse it with `engine` until the
+ * engine check of the attacker is done, and return the stones guess, the
+ * check's result and the attacker of the frame in use.
+ */
+async function runAttackerCheck(page, sgf, engine, {timeout = 150000} = {}) {
+  await page.evaluate(() => {
+    window.sabaki.setting.set('board.analysis_whole_board', false)
+  })
+  await loadSgfStringAndWait(page, sgf)
+  await waitForRender(page)
+
+  let guess = await page.evaluate(() => {
+    let frame = window.__sabaki.getAutoProblemFrame()
+    return frame && {attacker: frame.attacker, source: frame.attackerSource}
+  })
+
+  let [syncerId] = await attachAndWaitForEngines(page, [engine])
+
+  try {
+    await page.evaluate((id) => window.__sabaki.startAnalysis(id), syncerId)
+    await page.waitForFunction(
+      () => window.__sabaki.getAutoAttacker()?.phase === 'done',
+      null,
+      {timeout},
+    )
+
+    return {
+      guess,
+      ...(await page.evaluate(() => {
+        let s = window.__sabaki
+        return {
+          auto: s.getAutoAttacker(),
+          frameAttacker: s.getProblemFrame().attacker,
+        }
+      })),
+    }
+  } finally {
+    await detachAndWait(page, [syncerId])
+  }
+}
+
 module.exports = {
   waitForGameLoad,
   loadSgfAndWait,
@@ -156,4 +198,5 @@ module.exports = {
   attachAndWaitForEngines,
   detachAndWait,
   enginePath,
+  runAttackerCheck,
 }
