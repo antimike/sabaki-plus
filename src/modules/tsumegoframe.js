@@ -25,6 +25,12 @@
 // removed. Komi is set from area counts so that the game is even at the
 // midpoint between "the defender lives" and "the defender dies". The komi
 // model and its calibration against KataGo: docs/tsumego-frame.md.
+//
+// Ko threats (option koThreats): a threat for side T is a group of T's
+// opponent on the board edge, inside T's own zone, whose only liberties are a
+// straight four of eye space on the edge. Playing inside the eye space
+// threatens to kill it; the answer leaves it alive, so the exchange does not
+// change the score. Its points count as the opponent's area.
 
 const WALL_END = 4 // last wall line, as a distance from the window
 const MIN_DEFENDER_BLOCK = 12 // smaller defender territory is not worth a block
@@ -35,6 +41,14 @@ const MIN_EYE_SPACE = 3 // a stone on the vital point plus two eyes
 // wrongly at 335 and more (centre windows, where the defender gets no
 // territory); see scripts/frame-calibration.
 const MAX_KOMI = 250
+// Ko threats (baduk 899v): a threat's group must be worth more than the local
+// fight. Its area (stones plus eye space) is at least the living area plus
+// this margin. The one shape tested with KataGo (Cho Intermediate 0505,
+// living area 10) had 18 points and worked; L + 6 rounds up to that shape.
+const KO_THREAT_MARGIN = 6
+const KO_THREAT_MIN_DEPTH = 3 // rows, as in the tested shape
+const KO_THREAT_MAX_WIDTH = 10
+const KO_THREAT_MAX = 3
 
 /**
  * Infer the attacker from a problem's text, e.g. "Black to live" or
@@ -118,6 +132,8 @@ export function guessAttacker(signMap, vertices) {
  * @param {number} [options.margin] - lines added around the problem's stones
  * @param {number} [options.maxKomi] - no frame when balancing it takes a
  *   larger komi
+ * @param {{B?: number, W?: number}} [options.koThreats] - ko threats to build
+ *   for each colour, 0 to 3 each; as many as fit are placed
  * @returns {null | {
  *   signMap: number[][],
  *   komi: number,
@@ -125,7 +141,10 @@ export function guessAttacker(signMap, vertices) {
  *   attackerSource: 'option' | 'text' | 'stones',
  *   window: {rangeX: number[], rangeY: number[]},
  *   frameVertices: Array<[number, number]>,
- * }}
+ *   koThreats: {B: number, W: number},
+ *   koThreatVertices: Array<[number, number]>,
+ * }} - koThreats: the threats placed per colour; koThreatVertices: their eye
+ *   points, where threats are played and answered
  */
 export function getTsumegoFrame(
   signMap,
@@ -136,6 +155,7 @@ export function getTsumegoFrame(
     toPlay = 0,
     margin = 2,
     maxKomi = MAX_KOMI,
+    koThreats = {},
   } = {},
 ) {
   let height = signMap.length
@@ -234,45 +254,146 @@ export function getTsumegoFrame(
 
   // Defender territory: the points farthest from the window, as many as make
   // the midpoint even before komi (see the komi below).
+  //
+  // Ko threats change the split: a defender threat puts an attacker group in
+  // the defender's territory, so the defender's share grows by the group's
+  // area to stay even; an attacker threat does the opposite. When fewer
+  // threats fit than were asked for, the frame is built again for the number
+  // that fit, so komi does not have to make up the difference.
 
   let livingArea = estimateLivingArea(signMap, defender, rangeX, rangeY)
   let contextArea = (sign) =>
     contextStones.filter(([x, y]) => signMap[y][x] === sign).length
-  let defenderSize = Math.max(
-    0,
-    Math.min(
-      territory.length,
-      Math.round((width * height - livingArea) / 2 - contextArea(defender)),
-    ),
-  )
+  let threatShapes = getKoThreatShapes(livingArea + KO_THREAT_MARGIN)
+  let threatArea = threatShapes[0].width * threatShapes[0].depth
+  let requested = {}
 
-  if (defenderSize < MIN_DEFENDER_BLOCK) defenderSize = 0
+  for (let sign of [1, -1]) {
+    let n = Math.floor(Number(koThreats[sign > 0 ? 'B' : 'W']) || 0)
+    requested[sign] = Math.max(0, Math.min(KO_THREAT_MAX, n))
+  }
 
   territory.sort(([ax, ay, ad], [bx, by, bd]) => bd - ad || ay - by || ax - bx)
 
-  // Stones and eyes. Repairing groups without two eyes can hand planned
-  // defender points back to the attacker (a one-line strip beside the wall
-  // cannot hold eyes); retry with those points skipped so the defender still
-  // gets its share.
+  let build = (counts) => {
+    let threatShift = (counts[defender] - counts[attacker]) * threatArea
+    let defenderSize = Math.max(
+      0,
+      Math.min(
+        territory.length,
+        Math.round(
+          (width * height - livingArea) / 2 -
+            contextArea(defender) +
+            threatShift,
+        ),
+      ),
+    )
 
-  let lost = new Set()
-  let frame
+    if (defenderSize < MIN_DEFENDER_BLOCK) defenderSize = 0
 
-  for (let attempt = 0; attempt < 4; attempt++) {
-    let planned = territory
-      .filter(([x, y]) => !lost.has(y * width + x))
-      .slice(0, defenderSize)
-    let trial = zone.map((row) => [...row])
+    // Attacker threats need room beyond the wall, which the defender's share
+    // would otherwise take from the far side of the board: keep sites
+    // nearest the window back from it.
 
-    for (let [x, y] of planned) trial[y][x] = defender
+    let reserved = new Set()
+    let reservedRects = []
 
-    frame = settleZones(trial)
+    for (let i = 0; i < counts[attacker]; i++) {
+      let site = findKoThreatSites(
+        zone,
+        attacker,
+        threatShapes,
+        reservedRects,
+        distance,
+        true,
+      )[0]
+      if (site == null) break
 
-    let missing = planned.filter(([x, y]) => frame.zone[y][x] !== defender)
-    if (missing.length === 0) break
+      reservedRects.push(site.rect)
+      let {x0, x1, y0, y1} = site.rect
 
-    for (let [x, y] of missing) lost.add(y * width + x)
+      for (let y = y0 - 1; y <= y1 + 1; y++) {
+        for (let x = x0 - 1; x <= x1 + 1; x++) reserved.add(y * width + x)
+      }
+    }
+
+    // Stones and eyes. Repairing groups without two eyes can hand planned
+    // defender points back to the attacker (a one-line strip beside the wall
+    // cannot hold eyes); retry with those points skipped so the defender
+    // still gets its share.
+
+    let lost = new Set()
+    let frame
+
+    for (let attempt = 0; attempt < 4; attempt++) {
+      let planned = territory
+        .filter(
+          ([x, y]) => !lost.has(y * width + x) && !reserved.has(y * width + x),
+        )
+        .slice(0, defenderSize)
+      let trial = zone.map((row) => [...row])
+
+      for (let [x, y] of planned) trial[y][x] = defender
+
+      frame = settleZones(trial)
+
+      let missing = planned.filter(([x, y]) => frame.zone[y][x] !== defender)
+      if (missing.length === 0) break
+
+      for (let [x, y] of missing) lost.add(y * width + x)
+    }
+
+    // Ko threats, one side at a time so neither takes all the room
+
+    let placed = {1: 0, '-1': 0}
+    let threatVertices = []
+    let threatRects = []
+
+    for (let round = 0; round < KO_THREAT_MAX; round++) {
+      for (let sign of [defender, attacker]) {
+        if (round >= counts[sign] || placed[sign] < round) continue
+
+        let eyes = placeKoThreat(
+          frame,
+          sign,
+          threatShapes,
+          threatRects,
+          distance,
+          sign === attacker,
+        )
+        if (eyes == null) continue
+
+        placed[sign]++
+        threatVertices.push(...eyes)
+      }
+    }
+
+    return {frame, placed, threatVertices}
   }
+
+  // Komi: area at the midpoint between the defender living (with livingArea
+  // points of the window) and dying (the attacker takes the window). Outside
+  // the window the defender holds its frame zone and context stones; every
+  // other point, the gap included, ends up the attacker's. So at the midpoint
+  // the defender has D + L/2 of the N points, the attacker N - D - L/2, and the
+  // difference is 2D + L - N. Ko threat groups count as their owner's.
+
+  let getKomi = ({zone}) => {
+    let defenderArea = countZone(zone, defender) + contextArea(defender)
+    let difference = 2 * defenderArea + livingArea - width * height
+    return Math.floor(defender * difference) + 0.5
+  }
+
+  let built = build(requested)
+
+  if (built.placed[1] < requested[1] || built.placed[-1] < requested[-1]) {
+    let rebuilt = build(built.placed)
+    if (Math.abs(getKomi(rebuilt.frame)) <= Math.abs(getKomi(built.frame)))
+      built = rebuilt
+  }
+
+  let {frame, placed, threatVertices: koThreatVertices} = built
+  let komi = getKomi(frame)
 
   // Result
 
@@ -288,17 +409,6 @@ export function getTsumegoFrame(
     }
   }
 
-  // Komi: area at the midpoint between the defender living (with livingArea
-  // points of the window) and dying (the attacker takes the window). Outside
-  // the window the defender holds its frame zone and context stones; every
-  // other point, the gap included, ends up the attacker's. So at the midpoint
-  // the defender has D + L/2 of the N points, the attacker N - D - L/2, and the
-  // difference is 2D + L - N.
-
-  let defenderArea = countZone(frame.zone, defender) + contextArea(defender)
-  let difference = 2 * defenderArea + livingArea - width * height
-  let komi = Math.floor(defender * difference) + 0.5
-
   // A komi this large means the frame found almost no room for the
   // defender's share of territory (a centre problem). KataGo's scores were
   // wrong there, so analyse without a frame.
@@ -312,7 +422,196 @@ export function getTsumegoFrame(
     attackerSource,
     window: {rangeX, rangeY},
     frameVertices,
+    koThreats: {B: placed[1], W: placed[-1]},
+    koThreatVertices,
   }
+}
+
+// Group shapes for a ko threat of at least `area` points, smallest first: a
+// rectangle `width` points along the edge and `depth` rows deep.
+function getKoThreatShapes(area) {
+  let shapes = []
+
+  for (let width = 6; width <= KO_THREAT_MAX_WIDTH; width++) {
+    let depth = Math.max(KO_THREAT_MIN_DEPTH, Math.ceil(area / width))
+    shapes.push({width, depth})
+  }
+
+  return shapes.sort(
+    (a, b) => a.width * a.depth - b.width * b.depth || a.depth - b.depth,
+  )
+}
+
+// Where a ko threat for `threatener` fits in `zone`, best first: rectangle and
+// ring in the threatener's zone beyond the wall, not into a corner, three
+// lines or more from the threats in `threatRects`. With `onWall` (attacker
+// threats), the ring may lie on the wall's last line and must reach it, so it
+// joins the living wall; sites nearest the window come first. Otherwise the
+// farthest come first.
+function findKoThreatSites(
+  zone,
+  threatener,
+  shapes,
+  threatRects,
+  distance,
+  onWall,
+) {
+  let height = zone.length
+  let width = zone[0].length
+  let onBoard = (x, y) => x >= 0 && x < width && y >= 0 && y < height
+  let sites = []
+
+  for (let shape of shapes) {
+    for (let side = 0; side < 4; side++) {
+      // side 0 top, 1 bottom, 2 left, 3 right; `along` runs the edge
+      let vertical = side >= 2
+      let edgeLength = vertical ? height : width
+      let [w, h] = vertical
+        ? [shape.depth, shape.width]
+        : [shape.width, shape.depth]
+
+      // Not into a corner: the ring closes both ends, as in the tested shape
+      for (let along = 1; along + shape.width <= edgeLength - 1; along++) {
+        let x0 = vertical ? (side === 2 ? 0 : width - w) : along
+        let y0 = vertical ? along : side === 0 ? 0 : height - h
+        let rect = {x0, y0, x1: x0 + w - 1, y1: y0 + h - 1}
+        let offset = 1 + Math.floor((shape.width - 6) / 2)
+        let eyes = [0, 1, 2, 3].map((i) =>
+          vertical
+            ? [side === 2 ? 0 : width - 1, y0 + offset + i]
+            : [x0 + offset + i, side === 0 ? 0 : height - 1],
+        )
+
+        let ok = true
+        let nearest = Infinity
+
+        for (let y = rect.y0 - 1; y <= rect.y1 + 1 && ok; y++) {
+          for (let x = rect.x0 - 1; x <= rect.x1 + 1; x++) {
+            if (!onBoard(x, y)) continue
+
+            let d = distance(x, y)
+            let inRect =
+              x >= rect.x0 && x <= rect.x1 && y >= rect.y0 && y <= rect.y1
+            let minDistance = onWall && !inRect ? WALL_END : WALL_END + 1
+
+            if (zone[y][x] !== threatener || d < minDistance) {
+              ok = false
+              break
+            }
+            nearest = Math.min(nearest, d)
+          }
+        }
+
+        if (onWall && nearest > WALL_END) ok = false
+
+        let apart = (r) =>
+          Math.max(
+            r.x0 - rect.x1,
+            rect.x0 - r.x1,
+            r.y0 - rect.y1,
+            rect.y0 - r.y1,
+          ) >= 3
+
+        if (ok && threatRects.every(apart)) {
+          sites.push({rect, eyes, area: w * h, nearest, side, along})
+        }
+      }
+    }
+  }
+
+  // Smallest shape first, then by distance from the window
+  sites.sort(
+    (a, b) =>
+      a.area - b.area ||
+      (onWall ? a.nearest - b.nearest : b.nearest - a.nearest) ||
+      a.side - b.side ||
+      a.along - b.along,
+  )
+
+  return sites
+}
+
+/**
+ * Build one ko threat for `threatener` into a settled frame ({zone, stones},
+ * changed in place). The threat is a rectangle against a board edge, filled
+ * with the opponent's stones except for a straight four of eye space on the
+ * edge line, and ringed by the threatener's stones. Rectangle and ring lie in
+ * the threatener's zone beyond the wall, three lines or more from any other
+ * threat, and every frame group around them must keep two eyes.
+ *
+ * Returns the four eye points, or null when no shape fits.
+ */
+function placeKoThreat(
+  frame,
+  threatener,
+  shapes,
+  threatRects,
+  distance,
+  onWall = false,
+) {
+  let {zone, stones} = frame
+  let height = zone.length
+  let width = zone[0].length
+  let onBoard = (x, y) => x >= 0 && x < width && y >= 0 && y < height
+  let sites = findKoThreatSites(
+    zone,
+    threatener,
+    shapes,
+    threatRects,
+    distance,
+    onWall,
+  )
+
+  for (let site of sites) {
+    let {rect, eyes} = site
+    let inRect = (x, y) =>
+      x >= rect.x0 && x <= rect.x1 && y >= rect.y0 && y <= rect.y1
+    let isEye = (x, y) => eyes.some(([ex, ey]) => ex === x && ey === y)
+    let trialZone = zone.map((row) => [...row])
+    let trialStones = stones.map((row) => [...row])
+
+    for (let y = rect.y0 - 1; y <= rect.y1 + 1; y++) {
+      for (let x = rect.x0 - 1; x <= rect.x1 + 1; x++) {
+        if (!onBoard(x, y)) continue
+
+        if (!inRect(x, y)) {
+          trialStones[y][x] = threatener
+        } else {
+          trialZone[y][x] = -threatener
+          trialStones[y][x] = isEye(x, y) ? 0 : -threatener
+        }
+      }
+    }
+
+    // Every frame group but the threat groups themselves keeps two eyes
+    let rects = [...threatRects, rect]
+    let inAnyRect = (x, y) =>
+      rects.some((r) => x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1)
+    let frameEyes = []
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        if (
+          trialZone[y][x] !== 0 &&
+          trialStones[y][x] === 0 &&
+          !inAnyRect(x, y)
+        )
+          frameEyes.push([x, y])
+      }
+    }
+
+    let weak = findWeakGroups(trialStones, frameEyes).filter(
+      (group) => !group.some(([x, y]) => inAnyRect(x, y)),
+    )
+    if (weak.length > 0) continue
+
+    frame.zone = trialZone
+    frame.stones = trialStones
+    threatRects.push(rect)
+    return eyes
+  }
+
+  return null
 }
 
 /**
