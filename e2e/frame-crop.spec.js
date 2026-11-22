@@ -242,6 +242,7 @@ test.describe('tsumego frame controls', () => {
       'Attacker: Auto (Black, from text)': {enabled: false},
       'Attacker: Black': {enabled: false},
       'Attacker: White': {enabled: false},
+      'Show Frame': {enabled: false},
     })
   })
 
@@ -256,5 +257,129 @@ test.describe('tsumego frame controls', () => {
     await expectFrameMenu(electronApp, {
       'Attacker: Auto': {checked: true, enabled: false},
     })
+  })
+})
+
+// What Show Frame draws: vertex count, faint ghost stones by colour, and the
+// points painted as outside the window, with the unpainted points' extent.
+async function overlay(page) {
+  return page.evaluate(() => {
+    let vs = [...document.querySelectorAll('.shudan-vertex')]
+    let has = (v, c) => v.classList.contains(c)
+    let faint = vs.filter((v) => has(v, 'shudan-ghost_faint'))
+    let inside = vs.filter((v) => !has(v, 'shudan-paint_1'))
+    let xs = inside.map((v) => +v.dataset.x)
+    let ys = inside.map((v) => +v.dataset.y)
+
+    return {
+      count: vs.length,
+      ghostBlack: faint.filter((v) => has(v, 'shudan-ghost_1')).length,
+      ghostWhite: faint.filter((v) => has(v, 'shudan-ghost_-1')).length,
+      shaded: vs.length - inside.length,
+      unshaded: {
+        rangeX: [Math.min(...xs), Math.max(...xs)],
+        rangeY: [Math.min(...ys), Math.max(...ys)],
+      },
+    }
+  })
+}
+
+async function setShowFrame(electronApp, page, value) {
+  if ((await page.evaluate(() => window.__sabaki.state.showFrame)) !== value) {
+    await clickFrameMenu(electronApp, 'Show Frame')
+  }
+  await page.waitForFunction(
+    (v) => window.__sabaki.state.showFrame === v,
+    value,
+  )
+  await waitForRender(page)
+}
+
+test.describe('show frame overlay', () => {
+  test.afterEach(async ({page}) => {
+    await page.evaluate(() => {
+      window.__sabaki.setShowFrame(false)
+      window.__sabaki.setFrameAttacker(null)
+      window.__sabaki.setState({boardTransformation: ''})
+    })
+    await setWholeBoard(page, false)
+  })
+
+  test('uncrops and draws the frame as ghost stones', async ({
+    electronApp,
+    page,
+  }) => {
+    await setWholeBoard(page, false)
+    await loadSgfStringAndWait(page, CORNER)
+    await setShowFrame(electronApp, page, true)
+
+    let frame = await page.evaluate(() => {
+      let f = window.__sabaki.getProblemFrame()
+      let count = (s) =>
+        f.frameVertices.filter(([x, y]) => f.signMap[y][x] === s).length
+      return {black: count(1), white: count(-1)}
+    })
+    expect(frame.black + frame.white).toBeGreaterThan(0)
+
+    expect(await overlay(page)).toEqual({
+      count: 19 * 19,
+      ghostBlack: frame.black,
+      ghostWhite: frame.white,
+      shaded: 19 * 19 - 8 * 6,
+      unshaded: {rangeX: [0, 7], rangeY: [0, 5]},
+    })
+
+    await setShowFrame(electronApp, page, false)
+    let off = await overlay(page)
+    expect(off.count).toBe(8 * 6)
+    expect(off.ghostBlack + off.ghostWhite + off.shaded).toBe(0)
+  })
+
+  test('follows the attacker override', async ({electronApp, page}) => {
+    await setWholeBoard(page, false)
+    await loadSgfStringAndWait(page, CORNER)
+    await setShowFrame(electronApp, page, true)
+    let auto = await overlay(page)
+
+    await clickFrameMenu(electronApp, 'Attacker: White')
+    await page.waitForFunction(
+      () => window.__sabaki.getProblemFrame().attacker === -1,
+    )
+    await waitForRender(page)
+    let white = await overlay(page)
+
+    // The wall changes colour, so the split of frame stones changes.
+    expect(white.ghostBlack).not.toBe(auto.ghostBlack)
+    expect(white.unshaded).toEqual(auto.unshaded)
+  })
+
+  test('moves with a board rotation', async ({electronApp, page}) => {
+    await setWholeBoard(page, false)
+    await loadSgfStringAndWait(page, CORNER)
+    await page.evaluate(() =>
+      window.__sabaki.setState({boardTransformation: 'r'}),
+    )
+    await setShowFrame(electronApp, page, true)
+
+    // Clockwise rotation maps (x, y) to (18 - y, x)
+    expect(await overlay(page)).toMatchObject({
+      count: 19 * 19,
+      shaded: 19 * 19 - 8 * 6,
+      unshaded: {rangeX: [13, 18], rangeY: [0, 7]},
+    })
+  })
+
+  test('draws nothing in guess mode', async ({electronApp, page}) => {
+    await setWholeBoard(page, false)
+    await loadSgfStringAndWait(page, CORNER)
+    await setShowFrame(electronApp, page, true)
+    await page.evaluate(() => window.__sabaki.setMode('guess'))
+    await waitForRender(page)
+
+    let guess = await overlay(page)
+    expect(guess.count).toBe(8 * 6)
+    expect(guess.ghostBlack + guess.ghostWhite).toBe(0)
+
+    await page.evaluate(() => window.__sabaki.setMode('play'))
   })
 })
