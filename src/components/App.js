@@ -346,6 +346,8 @@ class App extends Component {
 
     // Fork (baduk D5, tfg1): what the frame's "Auto" attacker would be
     let autoFrame = sabaki.getAutoProblemFrame(state.gameTree)
+    // Fork (baduk D10): the engine check of a stones guess
+    let autoCheck = sabaki.getAutoAttacker(state.gameTree)
     // Fork (baduk 899v): ko threats asked for and placed
     let problemFrame = sabaki.getProblemFrame(state.gameTree)
 
@@ -368,8 +370,13 @@ class App extends Component {
         showAnalysis: state.showAnalysis,
         wholeBoardAnalysis: state.wholeBoardAnalysis,
         frameAttacker: state.frameAttackers[state.gameTree.root.id] ?? null,
-        autoAttacker: autoFrame?.attacker ?? null,
-        autoAttackerSource: autoFrame?.attackerSource ?? null,
+        autoAttacker: autoCheck?.flipped
+          ? autoCheck.attacker
+          : (autoFrame?.attacker ?? null),
+        autoAttackerSource: autoCheck?.flipped
+          ? 'engine'
+          : (autoFrame?.attackerSource ?? null),
+        autoAttackerSuspect: !!autoCheck?.suspect,
         showFrame: state.showFrame,
         frameKoThreats: sabaki.getFrameKoThreats(state.gameTree),
         placedKoThreats: problemFrame?.koThreats ?? null,
