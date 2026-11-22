@@ -28,11 +28,13 @@
 // --window-check skips the engine and lists every 19x19 problem in the corpus
 // whose SOL moves all lie outside the window.
 //
+// --summary prints the tables again from a saved results file.
+//
 // Usage (from the repo root):
 //   npx tsx scripts/frame-calibration/firstmove.js [--visits N]
 //     [--rerun-visits N] [--per-tier N] [--seed N] [--tiers 1a,1b,1c,1d]
 //     [--limit N] [--json FILE] [--problems DIR] [--katago BIN]
-//     [--model FILE] [--config FILE] [--window-check] [FILE.json ...]
+//     [--model FILE] [--config FILE] [--window-check] [--summary FILE.json] [FILE.json ...]
 //
 // Problem files named on the command line replace the sample. Problems are
 // read at run time from the sanderland-tsumego checkout and never copied into
@@ -88,6 +90,7 @@ function parseArgs(argv) {
     ),
     config: join(homedir(), '.config/katago/gtp.cfg'),
     'window-check': false,
+    summary: null,
     files: [],
   }
   let numeric = ['visits', 'rerun-visits', 'per-tier', 'seed', 'limit']
@@ -344,7 +347,16 @@ async function judge(engine, p, frame, visits) {
   let infos = await search(engine, base)
   let top = infos[0]?.move
   let solCoords = p.sol.map(coord)
-  let result = {top, topVisits: infos[0]?.visits, pv: infos[0]?.pv}
+  // rootWin: the side to play's win rate with its best move. A PASS with
+  // rootWin under 0.5 is a lost position whose top move happens to be a SOL
+  // move: the move check cannot see that the frame is off.
+  let result = {
+    top,
+    topVisits: infos[0]?.visits,
+    rootWin: r2(infos[0]?.winrate ?? 0),
+    rootLead: r2(infos[0]?.scoreLead ?? 0),
+    pv: infos[0]?.pv,
+  }
 
   if (solCoords.includes(top)) return {...result, verdict: 'PASS'}
 
@@ -360,7 +372,13 @@ async function judge(engine, p, frame, visits) {
   let solWin = await moverWin(sol)
   let verdict = topWin > 0.5 && solWin > 0.5 ? 'ALT' : 'FAIL'
 
-  return {...result, verdict, sol, topWin: r2(topWin), solWin: r2(solWin)}
+  return {
+    ...result,
+    verdict,
+    solMove: sol,
+    topWin: r2(topWin),
+    solWin: r2(solWin),
+  }
 }
 
 async function control(engine, p, visits) {
@@ -436,9 +454,18 @@ function summarize(results) {
   let row = (cells) => `| ${cells.join(' | ')} |`
 
   out.push(
-    row(['tier', 'n', 'PASS', 'ALT', 'FAIL', 'control PASS', 'frame hurt']),
+    row([
+      'tier',
+      'n',
+      'PASS',
+      'ALT',
+      'FAIL',
+      'PASS lost',
+      'control PASS',
+      'frame hurt',
+    ]),
   )
-  out.push(row(Array(7).fill('---')))
+  out.push(row(Array(8).fill('---')))
   for (let tier of [...tiers, 'all']) {
     let rs = tier === 'all' ? results : results.filter((r) => r.tier === tier)
     let count = (v) => rs.filter((r) => r.verdict === v).length
@@ -449,6 +476,7 @@ function summarize(results) {
         count('PASS'),
         count('ALT'),
         count('FAIL'),
+        rs.filter((r) => r.verdict === 'PASS' && r.rootWin < 0.5).length,
         rs.filter((r) => r.control.pass).length,
         rs.filter((r) => r.control.pass && r.verdict === 'FAIL').length,
       ]),
@@ -510,6 +538,13 @@ function windowCheck(problems) {
 async function main() {
   let args = parseArgs(process.argv.slice(2))
   let root = args.problems
+
+  if (args.summary != null) {
+    console.log(
+      summarize(JSON.parse(readFileSync(args.summary, 'utf8')).results),
+    )
+    return
+  }
 
   if (args['window-check']) {
     windowCheck(walk(root).map((f) => loadProblem(f, root)))
