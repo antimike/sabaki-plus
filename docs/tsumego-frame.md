@@ -51,7 +51,9 @@ Engines → Tsumego Frame holds the frame's controls:
   the points outside the window are shaded. Use it to tell a bad frame from a
   bad problem; normal use never draws the frame (D5). Not in guess mode.
 
-Ko threats per side get their control with the frame option (kata 899v).
+- **Ko Threats for Black / White**: 0 to 3 each, per game and per session like
+  the attacker. When fewer fit than asked, the checked item says so, e.g. "2 (1
+  placed)". See [Ko threats](#ko-threats-kata-899v).
 
 ## Balance: where komi comes from
 
@@ -126,7 +128,8 @@ What the count cannot see:
   the shared liberties. With the floor, the threshold is `(S + 3)/2`, so a seki
   group of more than three stones still lands on the defender's side.
 - **Ko.** The outcome depends on ko threats, which the frame handles separately
-  (D5 addendum: a set number of ko threats per side), not through komi.
+  (D5 addendum: a set number of ko threats per side), not through komi. See
+  [Ko threats](#ko-threats-kata-899v).
 
 ### Engine-based estimate (not built)
 
@@ -138,6 +141,74 @@ komi would need an engine round trip before analysis starts, which
 `getTsumegoFrame` (synchronous, engine-free) cannot do; engines without
 ownership output still need the count above; and a short search is noisy. It is
 planned for later, with the result cached per problem (`baduk` kata 4hv5).
+
+## Ko threats (kata 899v)
+
+Without threats, a ko in the window goes to whoever takes it first: on Cho
+Intermediate 0505 KataGo gives the defender 99% if it may retake and 0% if not.
+`getTsumegoFrame(..., {koThreats: {B, W}})` builds up to three threats per
+colour into the frame.
+
+**Shape.** A threat for side T is a group of T's opponent against a board edge,
+inside T's own zone, ringed by T's stones, whose only liberties are a straight
+four on the edge line:
+
+```
+. . . . . . . .      x  threatener (T)
+x x x x x x x x      o  threatened group
+x o o o o o o x
+x o o o o o o x      T plays inside the four (say the second point);
+x o . . . . o x      the answer, next to it, leaves two eyes.
+```
+
+Playing inside the four threatens to kill; the answer leaves the group alive, so
+a played and answered threat does not change the score (KataGo: 0505 with the
+threat spent first scores −9.7 against −10.3 without it). The group is a
+rectangle 6 to 10 points along the edge and at least 3 deep, with area (stones
+plus the four) at least `L + 6` (`KO_THREAT_MARGIN`): ignoring a threat must
+cost more than the ko. The one hand-tested shape had 18 points on a living area
+of 10; `L + 6` rounds up to it. The size is static; the engine-based `L` (4hv5)
+would refine it.
+
+**Placement.** Rectangle and ring lie in T's zone beyond the wall, not in a
+corner, at least three lines from other threats, and every frame group around
+them must keep two eyes. The defender's threats go as far from the window as
+possible, in its territory. The attacker's zone beyond the wall is narrow (the
+defender gets the far side), so attacker threats are reserved first, next to the
+wall, with the ring allowed on the wall's last line so it joins the living wall.
+Threats alternate between the colours until each has its count or no site is
+left; the result reports `koThreats` (placed per colour) and `koThreatVertices`
+(the eye points).
+
+**Balance.** A threat group counts as its owner's area: a defender threat puts
+attacker area into the defender's territory, so the defender's share grows by
+the group's area before the split, and an attacker threat shrinks it. When fewer
+threats fit than asked, the frame is built again for the number placed, and the
+build with the smaller komi wins. A changed share can end partway down a
+one-line strip along the edge, where the attacker's rest of the strip cannot
+live and is removed; komi counts the empty points that only defender stones
+surround as the defender's (this case predates ko threats, but they made it
+common: 16 points off on 0505 before the fix).
+
+**Engine.** The eye points join both `allow` lists, so threats can be played and
+answered at any depth. Candidates outside the window are still dropped from the
+heatmap, but the winrate and score shown are taken over every candidate, so they
+stay right when the best move is a threat or a pass. Marking such moves on the
+board is kata mcms.
+
+Validation (2026-11-21, b10c384h6nbttflrs, 3000 visits, frame komi, area rules;
+Cho problems, defender's win rate at the problem start):
+
+| problem               | ko for    | none | B 1  | W 1 | B 1, W 1 | B 2, W 1 |
+| --------------------- | --------- | ---- | ---- | --- | -------- | -------- |
+| Intermediate 0505     | B to live | 0%   | 98%  | 0%  | 1%       | 97%      |
+| Elementary 0299, 0319 | B to kill | 100% | 0–1% |     |          |          |
+| Elementary 0565       | B to kill | 99%  | 0%   |     |          |          |
+
+With one threat the book answer becomes KataGo's best move in each; with equal
+threats the side that takes the ko first wins, as it should. Elementary 0305 was
+inconclusive: its frame is about 27 points off before any ko (kata v2s9). On
+0505 threats leave the alive–dead midpoint where it was (+4.2 against +4.3).
 
 ## When there is no frame
 
