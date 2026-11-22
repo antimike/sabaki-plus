@@ -85,6 +85,9 @@ class Sabaki extends EventEmitter {
       // overrides per game, keyed by root id; Show Frame for every game.
       frameAttackers: {},
       showFrame: false,
+      // Fork (baduk 899v): ko threats per game, keyed by root id, as
+      // {B: n, W: n}; session-only like the attacker override.
+      frameKoThreats: {},
       showCoordinates: null,
       showMoveColorization: null,
       showMoveNumbers: null,
@@ -2269,7 +2272,13 @@ class Sabaki extends EventEmitter {
     if (setting.get('board.analysis_whole_board')) return null
 
     let attacker = this.state.frameAttackers[tree.root.id] ?? null
-    return this.buildProblemFrame(tree, attacker)
+    let koThreats = this.getFrameKoThreats(tree)
+    return this.buildProblemFrame(tree, attacker, koThreats)
+  }
+
+  // The ko threats asked for in the frame of `tree`'s game, {B: n, W: n}
+  getFrameKoThreats(tree = this.inferredState.gameTree) {
+    return this.state.frameKoThreats[tree.root.id] ?? {B: 0, W: 0}
   }
 
   // The frame with the attacker inferred, ignoring any override and the
@@ -2279,13 +2288,14 @@ class Sabaki extends EventEmitter {
   }
 
   // Trees are immutable and every edit makes a new one, so frames are cached
-  // per tree object and attacker: navigating and analysis updates reuse them.
-  buildProblemFrame(tree, attacker) {
+  // per tree object, attacker and ko threats: navigating and analysis updates
+  // reuse them.
+  buildProblemFrame(tree, attacker, koThreats = {B: 0, W: 0}) {
     this._problemFrames ??= new WeakMap()
     if (!this._problemFrames.has(tree)) this._problemFrames.set(tree, new Map())
 
     let cache = this._problemFrames.get(tree)
-    let key = attacker ?? 'auto'
+    let key = `${attacker ?? 'auto'} ${koThreats.B} ${koThreats.W}`
     if (cache.has(key)) return cache.get(key)
 
     let rootId = tree.root.id
@@ -2301,6 +2311,7 @@ class Sabaki extends EventEmitter {
       attacker,
       text,
       toPlay: this.getPlayer(rootId),
+      koThreats,
     })
 
     cache.set(key, frame)
@@ -2317,6 +2328,24 @@ class Sabaki extends EventEmitter {
       if (attacker === 1 || attacker === -1) result[rootId] = attacker
       else delete result[rootId]
       return {frameAttackers: result}
+    })
+
+    this.restartAnalysis()
+  }
+
+  // Ask for `count` ko threats (0 to 3) for `color` ('B' or 'W') in the
+  // current game's frame, for this session only.
+  setFrameKoThreats(color, count) {
+    let rootId = this.inferredState.gameTree.root.id
+
+    this.setState(({frameKoThreats}) => {
+      let current = frameKoThreats[rootId] ?? {B: 0, W: 0}
+      let next = {...current, [color]: count}
+      let result = {...frameKoThreats}
+
+      if (next.B === 0 && next.W === 0) delete result[rootId]
+      else result[rootId] = next
+      return {frameKoThreats: result}
     })
 
     this.restartAnalysis()
@@ -2364,13 +2393,17 @@ class Sabaki extends EventEmitter {
 
     if (frame != null && commandName !== 'analyze') {
       // Candidates and best lines stay in the window, for both players at
-      // every depth. Passing is allowed so a line can end.
+      // every depth. Passing is allowed so a line can end, and the frame's ko
+      // threats so they can be played and answered (baduk 899v).
 
       let board = gametree.getBoard(this.inferredState.gameTree, treePosition)
       let coords = [
-        ...getWindowVertices(frame.window).map((v) => board.stringifyVertex(v)),
-        'pass',
-      ].join(',')
+        ...getWindowVertices(frame.window),
+        ...(frame.koThreatVertices ?? []),
+      ]
+        .map((v) => board.stringifyVertex(v))
+        .concat(['pass'])
+        .join(',')
 
       for (let player of [color, sign > 0 ? 'W' : 'B']) {
         args.push('allow', player, coords, '1000')
