@@ -20,7 +20,9 @@ import * as gtplogger from './gtplogger.js'
 import * as helper from './helper.js'
 import * as sound from './sound.js'
 import {
+  AUTO_ATTACKER,
   applyTsumegoFrame,
+  chooseAttacker,
   getTsumegoFrame,
   getWindowVertices,
 } from './tsumegoframe.js'
@@ -88,6 +90,9 @@ class Sabaki extends EventEmitter {
       // Fork (baduk 899v): ko threats per game, keyed by root id, as
       // {B: n, W: n}; session-only like the attacker override.
       frameKoThreats: {},
+      // Fork (baduk D10): the engine's check of a stones guess, per game,
+      // keyed by root id; session-only. See checkAutoAttacker.
+      frameAutoAttackers: {},
       showCoordinates: null,
       showMoveColorization: null,
       showMoveNumbers: null,
@@ -1927,6 +1932,7 @@ class Sabaki extends EventEmitter {
             })
 
             this.setCurrentTreePosition(newTree, this.state.treePosition)
+            this.checkAutoAttacker(syncer)
           }
         }
       })
@@ -2271,7 +2277,9 @@ class Sabaki extends EventEmitter {
   getProblemFrame(tree = this.inferredState.gameTree) {
     if (setting.get('board.analysis_whole_board')) return null
 
-    let attacker = this.state.frameAttackers[tree.root.id] ?? null
+    let attacker =
+      this.state.frameAttackers[tree.root.id] ??
+      this.getAutoAttackerOverride(tree)
     let koThreats = this.getFrameKoThreats(tree)
     return this.buildProblemFrame(tree, attacker, koThreats)
   }
@@ -2318,10 +2326,103 @@ class Sabaki extends EventEmitter {
     return frame
   }
 
+  // The attacker the engine check (D10) puts in place of the stones guess:
+  // the flipped one while it is being analysed, and the flip once kept.
+  getAutoAttackerOverride(tree = this.inferredState.gameTree) {
+    let auto = this.state.frameAutoAttackers[tree.root.id]
+    if (auto == null) return null
+    if (auto.phase === 'flip') return -auto.guess
+    return auto.flipped ? auto.attacker : null
+  }
+
+  // Fork (baduk D10, kata v2s9): check a stones guess of the attacker with
+  // the engine. Once the analysis at the problem start has enough visits, a
+  // losing side to play has the flipped frame analysed; the flip is kept if
+  // the side to play wins with it. Called on every analysis update.
+  checkAutoAttacker(syncer) {
+    let tree = this.inferredState.gameTree
+    let rootId = tree.root.id
+    let {analysis} = syncer
+
+    if (analysis == null || syncer.treePosition !== rootId) return
+    if (setting.get('board.analysis_whole_board')) return
+    if (this.state.frameAttackers[rootId] != null) return
+
+    let auto = this.state.frameAutoAttackers[rootId]
+    if (auto?.phase === 'done') return
+    let staleUpTo = auto?.staleUpTo ?? this.frameChangedAtAnalysisId ?? 0
+    if (analysis.analysisId <= staleUpTo) return
+    if (!(analysis.visits >= AUTO_ATTACKER.visits)) return
+
+    let guessFrame = this.getAutoProblemFrame(tree)
+    if (guessFrame == null || guessFrame.attackerSource !== 'stones') return
+
+    // At the root the side to move is the side to play.
+    let win = analysis.winrate / 100
+    let t = i18n.context('sabaki.frame')
+    let setAuto = (value) =>
+      this.setState(({frameAutoAttackers}) => ({
+        frameAutoAttackers: {...frameAutoAttackers, [rootId]: value},
+      }))
+
+    if (auto == null) {
+      let choice = chooseAttacker(guessFrame.attacker, win)
+      if (choice != null) {
+        setAuto({
+          phase: 'done',
+          guess: guessFrame.attacker,
+          guessWin: win,
+          ...choice,
+        })
+        return
+      }
+
+      setAuto({
+        phase: 'flip',
+        guess: guessFrame.attacker,
+        guessWin: win,
+        staleUpTo: analysis.analysisId,
+      })
+      this.restartAnalysis()
+      return
+    }
+
+    let choice = chooseAttacker(auto.guess, auto.guessWin, win)
+    setAuto({...auto, phase: 'done', flipWin: win, ...choice})
+    if (!choice.flipped) this.restartAnalysis()
+
+    let colorName = (sign) => (sign > 0 ? t('Black') : t('White'))
+    this.flashInfoOverlay(
+      choice.flipped
+        ? t(
+            (p) =>
+              `Attacker set to ${p.color}: the side to play lost with the other one`,
+            {color: colorName(choice.attacker)},
+          )
+        : t(
+            'The side to play loses with either attacker: check the problem and its answer, or add ko threats',
+          ),
+      choice.flipped ? null : 6000,
+    )
+  }
+
+  // The analysis so far was of another frame: the engine check (D10) skips
+  // its updates.
+  markFrameChanged() {
+    let syncer = this.inferredState.analyzingEngineSyncer
+    this.frameChangedAtAnalysisId = syncer?.analysisCounter ?? 0
+  }
+
+  // The engine check's result for the current game (D10), for the menu
+  getAutoAttacker(tree = this.inferredState.gameTree) {
+    return this.state.frameAutoAttackers[tree.root.id] ?? null
+  }
+
   // Override the frame's attacker for the current game, for this session
   // only: 1 or -1, or null to go back to the inferred one.
   setFrameAttacker(attacker) {
     let rootId = this.inferredState.gameTree.root.id
+    this.markFrameChanged()
 
     this.setState(({frameAttackers}) => {
       let result = {...frameAttackers}
@@ -2337,6 +2438,7 @@ class Sabaki extends EventEmitter {
   // current game's frame, for this session only.
   setFrameKoThreats(color, count) {
     let rootId = this.inferredState.gameTree.root.id
+    this.markFrameChanged()
 
     this.setState(({frameKoThreats}) => {
       let current = frameKoThreats[rootId] ?? {B: 0, W: 0}

@@ -136,6 +136,10 @@ export default class EngineSyncer extends EventEmitter {
             ? 'float'
             : 'integer'
           let analysisWindow = this.analysisWindow
+          // Fork (baduk D10): tells a restarted search's updates from stale
+          // ones of the search before it.
+          let analysisId = (this.analysisCounter =
+            (this.analysisCounter ?? 0) + 1)
 
           subscribe(({line}) => {
             // Parse analysis info
@@ -164,6 +168,11 @@ export default class EngineSyncer extends EventEmitter {
                     scoreLead == null ? NaN : scoreLead,
                   ),
                 ),
+                visits: allVariations.reduce(
+                  (sum, v) => sum + (v.visits || 0),
+                  0,
+                ),
+                analysisId,
               }
             } else if (line.startsWith('play ')) {
               sign = -sign

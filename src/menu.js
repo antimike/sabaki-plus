@@ -36,6 +36,7 @@ exports.get = function (props = {}) {
     frameAttacker,
     autoAttacker,
     autoAttackerSource,
+    autoAttackerSuspect,
     showFrame,
     frameKoThreats = {B: 0, W: 0},
     placedKoThreats = null,
@@ -565,7 +566,9 @@ exports.get = function (props = {}) {
                   source:
                     autoAttackerSource === 'text'
                       ? i18n.t('menu.engines', 'text')
-                      : i18n.t('menu.engines', 'stones'),
+                      : autoAttackerSource === 'engine'
+                        ? i18n.t('menu.engines', 'engine')
+                        : i18n.t('menu.engines', 'stones'),
                 },
               ),
               type: 'radio',
@@ -587,6 +590,19 @@ exports.get = function (props = {}) {
               enabled: !wholeBoardAnalysis && autoAttacker != null,
               click: () => sabaki.setFrameAttacker(-1),
             },
+            // Fork (baduk D10): the engine check found the side to play
+            // losing with either attacker.
+            ...(autoAttackerSuspect && !wholeBoardAnalysis
+              ? [
+                  {
+                    label: i18n.t(
+                      'menu.engines',
+                      'Side to play loses with either attacker: check the problem',
+                    ),
+                    enabled: false,
+                  },
+                ]
+              : []),
             {type: 'separator'},
             // Fork (baduk 899v): ko threats built into the frame, per colour;
             // the count asked for shows how many fit when fewer did.

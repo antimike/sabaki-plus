@@ -35,13 +35,19 @@
 // --window-check skips the engine and lists every 19x19 problem in the corpus
 // whose SOL moves all lie outside the window.
 //
+// --auto-attacker judges each problem with the attacker the app picks (baduk
+// D10): a stones guess is flipped when the side to play loses with it at the
+// start and wins with the flip (`auto` in the results). The `attacker` rerun
+// then tries the other one.
+//
 // --summary prints the tables again from a saved results file.
 //
 // Usage (from the repo root):
 //   npx tsx scripts/frame-calibration/firstmove.js [--visits N]
 //     [--rerun-visits N] [--per-tier N] [--seed N] [--tiers 1a,1b,1c,1d]
 //     [--limit N] [--json FILE] [--problems DIR] [--katago BIN]
-//     [--model FILE] [--config FILE] [--window-check] [--summary FILE.json] [FILE.json ...]
+//     [--model FILE] [--config FILE] [--window-check] [--auto-attacker]
+//     [--summary FILE.json] [FILE.json ...]
 //
 // Problem files named on the command line replace the sample. Problems are
 // read at run time from the sanderland-tsumego checkout and never copied into
@@ -60,6 +66,8 @@ import {createInterface} from 'readline'
 import {fileURLToPath} from 'url'
 
 import {
+  AUTO_ATTACKER,
+  chooseAttacker,
   getTsumegoFrame,
   estimateLivingArea,
   getWindowVertices,
@@ -98,6 +106,7 @@ function parseArgs(argv) {
     ),
     config: join(homedir(), '.config/katago/gtp.cfg'),
     'window-check': false,
+    'auto-attacker': false,
     summary: null,
     files: [],
   }
@@ -113,7 +122,7 @@ function parseArgs(argv) {
     if (!(key in args) || key === 'files') {
       throw new Error(`unknown option ${argv[i]}`)
     }
-    if (key === 'window-check') args[key] = true
+    if (key === 'window-check' || key === 'auto-attacker') args[key] = true
     else args[key] = numeric.includes(key) ? Number(argv[++i]) : argv[++i]
   }
 
@@ -407,6 +416,32 @@ async function control(engine, p, visits) {
 
 const passes = (r) => r.verdict !== 'FAIL'
 
+// The attacker the app picks (baduk D10): a stones guess is checked at
+// AUTO_ATTACKER.visits from the problem start and flipped if the side to play
+// loses with it and wins with the flip.
+async function autoAttacker(engine, p, frame) {
+  let rootWin = async (f) => {
+    let infos = await search(engine, {
+      signMap: f.signMap,
+      frame: f,
+      toPlay: p.toPlay,
+      visits: AUTO_ATTACKER.visits,
+    })
+    return r2(infos[0]?.winrate ?? 0)
+  }
+
+  let guessWin = await rootWin(frame)
+  let choice = chooseAttacker(frame.attacker, guessWin)
+  let flipWin = null
+  if (choice == null) {
+    let flippedFrame = buildFrame(p, {attacker: -frame.attacker})
+    flipWin = flippedFrame == null ? 0 : await rootWin(flippedFrame)
+    choice = chooseAttacker(frame.attacker, guessWin, flipWin)
+  }
+
+  return {guessWin, flipWin, ...choice}
+}
+
 async function check(engine, p, args) {
   let frame = buildFrame(p)
   let result = {
@@ -419,6 +454,11 @@ async function check(engine, p, args) {
   }
 
   if (frame == null) return {...result, verdict: 'FAIL', cause: 'no-frame'}
+
+  if (args['auto-attacker'] && frame.attackerSource === 'stones') {
+    result.auto = await autoAttacker(engine, p, frame)
+    if (result.auto.flipped) frame = buildFrame(p, {attacker: -frame.attacker})
+  }
 
   Object.assign(result, {
     attacker: colorOf(frame.attacker),

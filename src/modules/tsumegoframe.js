@@ -114,6 +114,38 @@ export function guessAttacker(signMap, vertices) {
   return black > white ? 1 : -1
 }
 
+// Engine check of a stones guess (baduk D10, kata v2s9). The stones guess is
+// wrong in about one problem in eight, nearly always as "the side to play
+// attacks" when it has to live, and the side to play then loses at the
+// problem start. After `visits` at the start, a win rate below `maxWin` for
+// the side to play has the flipped frame analysed too.
+export const AUTO_ATTACKER = {visits: 500, maxWin: 0.3}
+
+/**
+ * Decide the attacker from the side to play's win rates (0 to 1) at the
+ * problem start: `guessWin` under the stones guess, `flipWin` under the
+ * flipped attacker (null until analysed). The flip is kept only if the side
+ * to play wins with it; otherwise the guess stays. `suspect`: the side to
+ * play loses with either attacker, so the problem, its answer or the frame
+ * may be wrong (a ko answer needs ko threats).
+ *
+ * Returns null when the flipped attacker still has to be analysed.
+ *
+ * @param {number} guess - the stones guess, 1 or -1
+ * @param {number} guessWin
+ * @param {number | null} [flipWin]
+ * @returns {null | {attacker: number, flipped: boolean, suspect: boolean}}
+ */
+export function chooseAttacker(guess, guessWin, flipWin = null) {
+  let {maxWin} = AUTO_ATTACKER
+  if (guessWin >= maxWin)
+    return {attacker: guess, flipped: false, suspect: false}
+  if (flipWin == null) return null
+
+  let flipped = flipWin >= maxWin
+  return {attacker: flipped ? -guess : guess, flipped, suspect: !flipped}
+}
+
 /**
  * Build the hidden frame for a problem.
  *
