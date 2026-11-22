@@ -281,3 +281,66 @@ first bad one (335).
 
 The mocha tests (`test/tsumegoFrameTests.js`) check the same balance without an
 engine, by area-scoring the framed alive and dead outcomes.
+
+## First-move check (kata 24ys)
+
+`scripts/frame-calibration/firstmove.js` checks the frame and the window
+restriction against real problems: for each one it asks KataGo for its best move
+from the problem start, framed and restricted as the app does it (frame komi,
+area rules, `allow` lists for both players), and compares it with the problem's
+SOL first moves. The script's header has the method; problems are read from the
+sanderland checkout at run time and never committed.
+
+- **Sample:** sanderland life-and-death tiers 1a–1d, 50 problems each (seed 1,
+  at least 5 per author, the rest in proportion; non-19×19 problems and "Backup
+  solution detector" answers left out).
+- **Engine:** b10c384h6nbttflrs at 2000 visits, failures rerun at 10000.
+- **PASS:** the top move is a SOL move and the side to play wins. **ALT:** the
+  top move is not a SOL move, but it and the SOL move both win. **FAIL:**
+  anything else. A first run without the "wins" condition scored a wrong frame
+  as PASS whenever the book move topped a lost search (Ishigure 001: attacker
+  guessed Black, White ahead by 84).
+- **Control:** the same search with no frame and no restriction. "Frame hurt"
+  counts problems that pass the control and fail framed.
+
+Run of 2026-11-21:
+
+| tier | n   | PASS | ALT | FAIL | FAIL on SOL | control PASS | frame hurt |
+| ---- | --- | ---- | --- | ---- | ----------- | ------------ | ---------- |
+| 1a   | 50  | 36   | 7   | 7    | 7           | 31           | 4          |
+| 1b   | 50  | 34   | 6   | 10   | 4           | 34           | 6          |
+| 1c   | 50  | 39   | 7   | 4    | 1           | 24           | 2          |
+| 1d   | 50  | 33   | 3   | 14   | 2           | 32           | 8          |
+| all  | 200 | 142  | 23  | 35   | 14          | 121          | 20         |
+
+"FAIL on SOL": the top move is a SOL move but the side to play loses. The frame
+turns 121 control passes into 165 (PASS or ALT). Each FAIL's cause is the first
+one-change rerun that makes it pass:
+
+| cause          | n   | rerun                                                 |
+| -------------- | --- | ----------------------------------------------------- |
+| attacker       | 22  | attacker flipped (kata v2s9)                          |
+| ko             | 1   | one frame ko threat for the defender                  |
+| depth          | 0   | 10000 visits                                          |
+| frame          | 12  | none of the above passes                              |
+| outside-window | 0   | also 0 over the whole 19×19 corpus (`--window-check`) |
+| no-frame       | 0   |                                                       |
+
+- **The split is not stable.** Every FAIL of the first run failed again, but the
+  causes of 5 moved: 4 were `attacker` in the first run and `frame` here (the
+  flipped-attacker rerun is borderline for them), and Maeda 1k-1d 117 passed the
+  ko rerun once. Read the causes as attacker 22–26, frame 7–12.
+- **Attacker.** All 200 attackers come from the stones (no problem text says
+  "kill" or "live"). The guess is the side to play in 139 problems, and 21 of
+  the 22 attacker failures are among them (15%); in the other 61 there is one.
+  The usual case is a Black-to-live problem guessed as Black attacking, lost for
+  Black by 15 to 110 points whatever it plays.
+- **Frame.** These fail with either attacker, a ko threat and 10000 visits. Some
+  are a few points short (Cho Intermediate 0637, Maeda 1k-5k 013, Maeda 1k-1d
+  055: the defender trails by 10 to 13 after the SOL move); others are lost by
+  40 to 96 points (Cho Elementary 0340, Maeda 100 Problems 089, Maeda 10k-5k
+  123), more than komi alone explains.
+- **Ko.** Yamada Basic 1006 passes with one ko threat for the defender.
+
+The run's per-problem results stay in `scripts/frame-calibration/results/`
+(gitignored); `firstmove.js --summary FILE` reprints these tables from one.
