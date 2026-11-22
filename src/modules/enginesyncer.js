@@ -141,23 +141,26 @@ export default class EngineSyncer extends EventEmitter {
             // Parse analysis info
 
             if (line.startsWith('info ')) {
-              let variations = parseAnalysis(line, board, winrateFormat)
-              if (analysisWindow != null) {
-                variations = restrictAnalysisToWindow(
-                  variations,
-                  analysisWindow,
-                )
-              }
+              let allVariations = parseAnalysis(line, board, winrateFormat)
               // Ignore an update with no parseable variations rather than let
               // Math.max(...[]) === -Infinity become a non-finite SBKV.
-              if (variations.length === 0) return
+              if (allVariations.length === 0) return
+
+              // Fork (baduk 899v): the position's winrate and score come from
+              // every candidate, so they stay right when the best move is
+              // outside the window (a frame ko threat, or a pass); only the
+              // candidates shown are kept inside it.
+              let variations =
+                analysisWindow != null
+                  ? restrictAnalysisToWindow(allVariations, analysisWindow)
+                  : allVariations
 
               this.analysis = {
                 sign,
                 variations,
-                winrate: Math.max(...variations.map(({winrate}) => winrate)),
+                winrate: Math.max(...allVariations.map(({winrate}) => winrate)),
                 scoreLead: Math.max(
-                  ...variations.map(({scoreLead}) =>
+                  ...allVariations.map(({scoreLead}) =>
                     scoreLead == null ? NaN : scoreLead,
                   ),
                 ),
