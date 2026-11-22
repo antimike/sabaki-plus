@@ -8,7 +8,7 @@
 // compares it with the problem's SOL first moves. SOL lists the accepted first
 // moves; it has no follow-up, so only the first move is checked.
 //
-//   PASS  the top move is one of the SOL moves
+//   PASS  the top move is one of the SOL moves and the side to play wins
 //   ALT   it is not, but the top move and the SOL move both win for the side
 //         to play (move order or a second solution)
 //   FAIL  anything else
@@ -347,9 +347,9 @@ async function judge(engine, p, frame, visits) {
   let infos = await search(engine, base)
   let top = infos[0]?.move
   let solCoords = p.sol.map(coord)
-  // rootWin: the side to play's win rate with its best move. A PASS with
-  // rootWin under 0.5 is a lost position whose top move happens to be a SOL
-  // move: the move check cannot see that the frame is off.
+  // rootWin: the side to play's win rate with its best move. A SOL top move
+  // in a lost position is a FAIL: a wrong attacker or komi can leave the
+  // book move on top of a lost search.
   let result = {
     top,
     topVisits: infos[0]?.visits,
@@ -358,7 +358,12 @@ async function judge(engine, p, frame, visits) {
     pv: infos[0]?.pv,
   }
 
-  if (solCoords.includes(top)) return {...result, verdict: 'PASS'}
+  if (solCoords.includes(top)) {
+    let won = result.rootWin > 0.5
+    return won
+      ? {...result, verdict: 'PASS'}
+      : {...result, verdict: 'FAIL', solMove: top, solWin: result.rootWin}
+  }
 
   // The SOL move to compare with: the one the search liked best.
   let sol =
@@ -460,7 +465,7 @@ function summarize(results) {
       'PASS',
       'ALT',
       'FAIL',
-      'PASS lost',
+      'FAIL on SOL',
       'control PASS',
       'frame hurt',
     ]),
@@ -476,7 +481,7 @@ function summarize(results) {
         count('PASS'),
         count('ALT'),
         count('FAIL'),
-        rs.filter((r) => r.verdict === 'PASS' && r.rootWin < 0.5).length,
+        rs.filter((r) => r.verdict === 'FAIL' && r.sol.includes(r.top)).length,
         rs.filter((r) => r.control.pass).length,
         rs.filter((r) => r.control.pass && r.verdict === 'FAIL').length,
       ]),
