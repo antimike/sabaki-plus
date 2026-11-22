@@ -590,6 +590,7 @@ exports.get = function (props = {}) {
               label: i18n.t('menu.engines', '&Show Frame'),
               type: 'checkbox',
               checked: !!showFrame,
+              enabled: !wholeBoardAnalysis && autoAttacker != null,
               click: () => sabaki.setShowFrame(!sabaki.state.showFrame),
             },
           ],
