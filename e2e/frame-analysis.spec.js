@@ -11,6 +11,7 @@ const {
 // heatmap and the best line from a real engine stay inside the cropped window
 // and never touch frame stones, also under a board rotation. kata tfg1: the
 // session attacker override reaches the engine, and Show Frame does not.
+// kata 899v: ko threats reach the engine, stones, komi and `allow` points.
 //
 // This needs a real KataGo, so it is skipped unless SABAKI_E2E_KATAGO names the
 // binary; SABAKI_E2E_KATAGO_ARGS holds its arguments (`gtp -model ... -config
@@ -299,6 +300,79 @@ test.describe('engine analysis inside the tsumego frame window', () => {
       await page.evaluate(() => {
         window.__sabaki.setShowFrame(false)
         window.__sabaki.setFrameAttacker(null)
+        window.__sabaki.stopAnalysis()
+      })
+      await detachAndWait(page, [syncerId])
+    }
+  })
+  // Fork-only (kata 899v): ko threats asked for in the session reach the
+  // engine: the frame's new stones and komi, and their eye points in both
+  // `allow` lists so threats can be played and answered.
+  test('ko threats reach the engine', async ({page}) => {
+    await page.evaluate(() => {
+      window.sabaki.setting.set('board.analysis_whole_board', false)
+      window.sabaki.setting.set('board.show_analysis', true)
+    })
+    await loadSgfStringAndWait(page, CORNER)
+    await waitForRender(page)
+
+    let [syncerId] = await attachAndWaitForEngines(page, [
+      {name: 'KataGo', path: KATAGO, args: KATAGO_ARGS},
+    ])
+
+    try {
+      await page.evaluate((id) => window.__sabaki.startAnalysis(id), syncerId)
+      await waitForSearch(page)
+      let plain = await expectedEngineState(page)
+
+      // Record the analysis commands sent from here on
+      await page.evaluate(() => {
+        window.__sent = []
+        window.__sabaki.inferredState.analyzingEngineSyncer.controller.on(
+          'command-sent',
+          ({command}) => {
+            if (/analyze$/.test(command.name)) window.__sent.push(command.args)
+          },
+        )
+        window.__sabaki.setFrameKoThreats('B', 1)
+        window.__sabaki.setFrameKoThreats('W', 1)
+      })
+
+      let frame = await page.evaluate(() => {
+        let s = window.__sabaki
+        let f = s.getProblemFrame()
+        return {koThreats: f.koThreats, eyes: f.koThreatVertices}
+      })
+      expect(frame.koThreats).toEqual({B: 1, W: 1})
+      expect(frame.eyes).toHaveLength(8)
+
+      let threats = await expectedEngineState(page)
+      expect(threats).not.toEqual(plain)
+      await expect.poll(() => engineState(page)).toEqual(threats)
+
+      await expect
+        .poll(() => page.evaluate(() => window.__sent.length))
+        .toBeGreaterThan(0)
+      let args = await page.evaluate(() => window.__sent.at(-1))
+      let coords = await page.evaluate(
+        (eyes) =>
+          eyes.map((v) =>
+            window.__sabaki.inferredState.board.stringifyVertex(v),
+          ),
+        frame.eyes,
+      )
+      let allows = args
+        .map((a, i) => (a === 'allow' ? args[i + 2].split(',') : null))
+        .filter((x) => x != null)
+
+      expect(allows).toHaveLength(2)
+      for (let list of allows) {
+        for (let c of coords) expect(list).toContain(c)
+      }
+    } finally {
+      await page.evaluate(() => {
+        window.__sabaki.setFrameKoThreats('B', 0)
+        window.__sabaki.setFrameKoThreats('W', 0)
         window.__sabaki.stopAnalysis()
       })
       await detachAndWait(page, [syncerId])
