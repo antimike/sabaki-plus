@@ -16,6 +16,9 @@ const setting = {
 }
 const alpha = 'ABCDEFGHJKLMNOPQRSTUVWXYZ'
 
+// Fork (tfg1): paint strength for points outside the frame window
+const FRAME_SHADE = 0.4
+
 export default class Goban extends Component {
   constructor(props) {
     super(props)
@@ -240,6 +243,7 @@ export default class Goban extends Component {
       drawLineMode = null,
       transformation = '',
       cropWindow = null,
+      frameOverlay = null,
       currentThemeId,
     },
     {
@@ -284,15 +288,20 @@ export default class Goban extends Component {
     // Crop to `cropWindow` (the tsumego frame's window) when given, otherwise
     // to the SGF VW window
 
+    // Fork (baduk D5, tfg1): Show Frame needs the whole board, since every
+    // frame stone lies outside the window.
+
     let {rangeX, rangeY} =
-      cropWindow != null
-        ? gobantransformer.transformRange(
-            cropWindow,
-            transformation,
-            board.width,
-            board.height,
-          )
-        : gametree.getViewRange(gameTree, treePosition, board, transformation)
+      frameOverlay != null
+        ? {rangeX: [0, board.width - 1], rangeY: [0, board.height - 1]}
+        : cropWindow != null
+          ? gobantransformer.transformRange(
+              cropWindow,
+              transformation,
+              board.width,
+              board.height,
+            )
+          : gametree.getViewRange(gameTree, treePosition, board, transformation)
 
     // Calculate coordinates
 
@@ -376,6 +385,34 @@ export default class Goban extends Component {
 
           ghostStoneMap[y][x] = {sign, type: showMoveColorization ? type : null}
         }
+      }
+    }
+
+    // Fork (baduk D5, tfg1): Show Frame draws the frame stones as faint
+    // ghost stones and shades the points outside the window the engine may
+    // play in. Problem stones stay solid.
+
+    if (frameOverlay != null) {
+      if (ghostStoneMap.length === 0) {
+        ghostStoneMap = board.signMap.map((row) => row.map((_) => null))
+      }
+
+      for (let [x, y] of frameOverlay.frameVertices) {
+        let sign = frameOverlay.signMap[y][x]
+        if (sign !== 0 && board.signMap[y][x] === 0) {
+          ghostStoneMap[y][x] = {sign, faint: true}
+        }
+      }
+
+      if (paintMap.length === 0) {
+        let [x0, x1] = frameOverlay.window.rangeX
+        let [y0, y1] = frameOverlay.window.rangeY
+
+        paintMap = board.signMap.map((row, y) =>
+          row.map((_, x) =>
+            x >= x0 && x <= x1 && y >= y0 && y <= y1 ? 0 : FRAME_SHADE,
+          ),
+        )
       }
     }
 
@@ -488,7 +525,7 @@ export default class Goban extends Component {
 
     return h(BoundedGoban, {
       id: 'goban',
-      class: classNames({crosshair}),
+      class: classNames({crosshair, frameoverlay: frameOverlay != null}),
       style: {top, left},
       innerProps: {ref: (el) => (this.element = el)},
 

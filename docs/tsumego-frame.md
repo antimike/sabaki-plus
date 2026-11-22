@@ -35,6 +35,24 @@ analysis and the board crop (`MainView` → `Goban`'s `cropWindow`) read its
 window, so the two cannot drift. Without a frame (none applies, or whole-board
 analysis is on) the board falls back to the plain `VW` crop.
 
+## Controls and Show Frame (kata tfg1)
+
+Engines → Tsumego Frame holds the frame's controls:
+
+- **Whole-Board Analysis**: no frame and no `allow` restriction; a saved
+  setting.
+- **Attacker**: Auto, Black or White. Auto names what inference chose and from
+  where, e.g. "Auto (Black, from text)". A choice applies to the current game
+  only, is keyed by its root node id (stable across edits), and lasts for the
+  session; saving it in the SGF is kata y3sr. Frames are cached per tree and
+  attacker (`sabaki.buildProblemFrame`).
+- **Show Frame**: a session toggle, off at start. The board shows uncropped, the
+  frame applied to the current position appears as large pale ghost stones, and
+  the points outside the window are shaded. Use it to tell a bad frame from a
+  bad problem; normal use never draws the frame (D5). Not in guess mode.
+
+Ko threats per side get their control with the frame option (kata 899v).
+
 ## Balance: where komi comes from
 
 Under area scoring every point of a finished board belongs to one side (neutral

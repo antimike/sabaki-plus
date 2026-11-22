@@ -344,6 +344,9 @@ class App extends Component {
 
     state = {...state, ...inferredState, scoreBoard, areaMap}
 
+    // Fork (baduk D5, tfg1): what the frame's "Auto" attacker would be
+    let autoFrame = sabaki.getAutoProblemFrame(state.gameTree)
+
     return h(
       'section',
       {
@@ -362,6 +365,10 @@ class App extends Component {
         analysisValueType: state.analysisValueType,
         showAnalysis: state.showAnalysis,
         wholeBoardAnalysis: state.wholeBoardAnalysis,
+        frameAttacker: state.frameAttackers[state.gameTree.root.id] ?? null,
+        autoAttacker: autoFrame?.attacker ?? null,
+        autoAttackerSource: autoFrame?.attackerSource ?? null,
+        showFrame: state.showFrame,
         showCoordinates: state.showCoordinates,
         coordinatesType: state.coordinatesType,
         showMoveNumbers: state.showMoveNumbers,

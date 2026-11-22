@@ -103,6 +103,7 @@ export default class MainView extends Component {
       animateStonePlacement,
       boardTransformation,
       currentThemeId,
+      showFrame,
 
       selectedTool,
       findText,
@@ -125,6 +126,13 @@ export default class MainView extends Component {
         paintMap[y][x] = 1
       }
     }
+
+    // Fork (baduk D5, tfg1): Show Frame draws the frame the engine gets at
+    // this position. Not in guess mode, which must not give hints.
+    let frameOverlay =
+      showFrame && mode !== 'guess'
+        ? sabaki.getAnalysisFrame(treePosition)
+        : null
 
     return h(
       'section',
@@ -173,6 +181,7 @@ export default class MainView extends Component {
           // Fork (baduk D5): show what the engine may play in, the frame's
           // window, whether or not an engine is attached
           cropWindow: sabaki.getProblemFrame(gameTree)?.window ?? null,
+          frameOverlay,
 
           onVertexClick: this.handleGobanVertexClick,
           onLineDraw: this.handleGobanLineDraw,

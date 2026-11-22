@@ -81,6 +81,10 @@ class Sabaki extends EventEmitter {
       coordinatesType: null,
       showAnalysis: null,
       wholeBoardAnalysis: null,
+      // Fork (baduk D5, tfg1): session-only frame controls. Attacker
+      // overrides per game, keyed by root id; Show Frame for every game.
+      frameAttackers: {},
+      showFrame: false,
       showCoordinates: null,
       showMoveColorization: null,
       showMoveNumbers: null,
@@ -2260,14 +2264,29 @@ class Sabaki extends EventEmitter {
   // its starting position: the root node, with its VW. Null for whole-board
   // analysis, or when no frame applies. Both the analysis (`allow`) and the
   // board crop take their window from here, so they cannot drift apart.
-  //
-  // Trees are immutable and every edit makes a new one, so the frame is
-  // cached per tree object: navigating and analysis updates reuse it.
+  // The attacker is the session override for this game, if any (tfg1).
   getProblemFrame(tree = this.inferredState.gameTree) {
     if (setting.get('board.analysis_whole_board')) return null
 
+    let attacker = this.state.frameAttackers[tree.root.id] ?? null
+    return this.buildProblemFrame(tree, attacker)
+  }
+
+  // The frame with the attacker inferred, ignoring any override and the
+  // whole-board switch: what "Auto" would pick.
+  getAutoProblemFrame(tree = this.inferredState.gameTree) {
+    return this.buildProblemFrame(tree, null)
+  }
+
+  // Trees are immutable and every edit makes a new one, so frames are cached
+  // per tree object and attacker: navigating and analysis updates reuse them.
+  buildProblemFrame(tree, attacker) {
     this._problemFrames ??= new WeakMap()
-    if (this._problemFrames.has(tree)) return this._problemFrames.get(tree)
+    if (!this._problemFrames.has(tree)) this._problemFrames.set(tree, new Map())
+
+    let cache = this._problemFrames.get(tree)
+    let key = attacker ?? 'auto'
+    if (cache.has(key)) return cache.get(key)
 
     let rootId = tree.root.id
     let startBoard = gametree.getBoard(tree, rootId)
@@ -2279,12 +2298,32 @@ class Sabaki extends EventEmitter {
 
     let frame = getTsumegoFrame(startBoard.signMap, {
       window: gametree.getViewRange(tree, rootId, startBoard),
+      attacker,
       text,
       toPlay: this.getPlayer(rootId),
     })
 
-    this._problemFrames.set(tree, frame)
+    cache.set(key, frame)
     return frame
+  }
+
+  // Override the frame's attacker for the current game, for this session
+  // only: 1 or -1, or null to go back to the inferred one.
+  setFrameAttacker(attacker) {
+    let rootId = this.inferredState.gameTree.root.id
+
+    this.setState(({frameAttackers}) => {
+      let result = {...frameAttackers}
+      if (attacker === 1 || attacker === -1) result[rootId] = attacker
+      else delete result[rootId]
+      return {frameAttackers: result}
+    })
+
+    this.restartAnalysis()
+  }
+
+  setShowFrame(showFrame) {
+    this.setState({showFrame: !!showFrame})
   }
 
   // The problem frame put onto the position at `treePosition`, for the
