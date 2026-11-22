@@ -33,6 +33,10 @@ exports.get = function (props = {}) {
     analysisValueType,
     showAnalysis,
     wholeBoardAnalysis,
+    frameAttacker,
+    autoAttacker,
+    autoAttackerSource,
+    showFrame,
     showCoordinates,
     coordinatesType,
     showMoveNumbers,
@@ -528,13 +532,67 @@ exports.get = function (props = {}) {
           },
         },
         {
-          label: i18n.t('menu.engines', '&Whole-Board Analysis'),
-          type: 'checkbox',
-          checked: !!wholeBoardAnalysis,
-          click: () => {
-            toggleSetting('board.analysis_whole_board')
-            sabaki.restartAnalysis()
-          },
+          // Fork (baduk D5, tfg1): the hidden frame's controls. The attacker
+          // and Show Frame last for the session only.
+          label: i18n.t('menu.engines', 'Tsumego &Frame'),
+          submenu: [
+            {
+              label: i18n.t('menu.engines', '&Whole-Board Analysis'),
+              type: 'checkbox',
+              checked: !!wholeBoardAnalysis,
+              click: () => {
+                toggleSetting('board.analysis_whole_board')
+                sabaki.restartAnalysis()
+              },
+            },
+            {type: 'separator'},
+            {
+              label: i18n.t(
+                'menu.engines',
+                (p) =>
+                  p.color == null
+                    ? 'Attacker: &Auto'
+                    : `Attacker: &Auto (${p.color}, from ${p.source})`,
+                {
+                  color:
+                    autoAttacker == null
+                      ? null
+                      : autoAttacker > 0
+                        ? i18n.t('menu.engines', 'Black')
+                        : i18n.t('menu.engines', 'White'),
+                  source:
+                    autoAttackerSource === 'text'
+                      ? i18n.t('menu.engines', 'text')
+                      : i18n.t('menu.engines', 'stones'),
+                },
+              ),
+              type: 'radio',
+              checked: frameAttacker == null,
+              enabled: !wholeBoardAnalysis && autoAttacker != null,
+              click: () => sabaki.setFrameAttacker(null),
+            },
+            {
+              label: i18n.t('menu.engines', 'Attacker: &Black'),
+              type: 'radio',
+              checked: frameAttacker === 1,
+              enabled: !wholeBoardAnalysis && autoAttacker != null,
+              click: () => sabaki.setFrameAttacker(1),
+            },
+            {
+              label: i18n.t('menu.engines', 'Attacker: W&hite'),
+              type: 'radio',
+              checked: frameAttacker === -1,
+              enabled: !wholeBoardAnalysis && autoAttacker != null,
+              click: () => sabaki.setFrameAttacker(-1),
+            },
+            {type: 'separator'},
+            {
+              label: i18n.t('menu.engines', '&Show Frame'),
+              type: 'checkbox',
+              checked: !!showFrame,
+              click: () => sabaki.setShowFrame(!sabaki.state.showFrame),
+            },
+          ],
         },
         {
           label: !engineGameOngoing
