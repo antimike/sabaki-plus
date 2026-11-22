@@ -1,11 +1,6 @@
 const {expect} = require('@playwright/test')
 const {test} = require('./fixtures/electron-app')
-const {
-  loadSgfStringAndWait,
-  waitForRender,
-  attachAndWaitForEngines,
-  detachAndWait,
-} = require('./helpers')
+const {runAttackerCheck} = require('./helpers')
 
 // Fork-only (baduk D10, kata v2s9): the engine checks a stones guess of the
 // attacker. When the side to play loses at the problem start with the guess,
@@ -34,41 +29,13 @@ const SUSPECT =
   'C[Black to play];B[pc])'
 
 async function runCheck(page, sgf) {
-  await page.evaluate(() => {
-    window.sabaki.setting.set('board.analysis_whole_board', false)
-  })
-  await loadSgfStringAndWait(page, sgf)
-  await waitForRender(page)
-
-  let guess = await page.evaluate(() => {
-    let frame = window.__sabaki.getAutoProblemFrame()
-    return {attacker: frame.attacker, source: frame.attackerSource}
+  let {guess, ...result} = await runAttackerCheck(page, sgf, {
+    name: 'KataGo',
+    path: KATAGO,
+    args: KATAGO_ARGS,
   })
   expect(guess).toEqual({attacker: 1, source: 'stones'})
-
-  let [syncerId] = await attachAndWaitForEngines(page, [
-    {name: 'KataGo', path: KATAGO, args: KATAGO_ARGS},
-  ])
-
-  try {
-    await page.evaluate((id) => window.__sabaki.startAnalysis(id), syncerId)
-    await page.waitForFunction(
-      () => window.__sabaki.getAutoAttacker()?.phase === 'done',
-      null,
-      {timeout: 150000},
-    )
-
-    return await page.evaluate(() => {
-      let s = window.__sabaki
-      let auto = s.getAutoAttacker()
-      return {
-        auto,
-        frameAttacker: s.getProblemFrame().attacker,
-      }
-    })
-  } finally {
-    await detachAndWait(page, [syncerId])
-  }
+  return result
 }
 
 test.describe('engine check of the stones attacker guess', () => {
