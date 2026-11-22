@@ -334,7 +334,35 @@ one-change rerun that makes it pass:
   "kill" or "live"). The guess is the side to play in 139 problems, and 21 of
   the 22 attacker failures are among them (15%); in the other 61 there is one.
   The usual case is a Black-to-live problem guessed as Black attacking, lost for
-  Black by 15 to 110 points whatever it plays.
+  Black by 15 to 110 points whatever it plays. Other stones rules did worse on
+  the 187 problems whose attacker the run settles (165 right now): the share of
+  stones touching the open outside 131 right of 171 decided, the largest
+  enclosed group 64 of 91, the farthest stone from the edge 145 of 171; and no
+  threshold on the current rule's margin helps, since problems where the side to
+  play defends reach margins up to 0.90, inside the range of those where it
+  attacks. What does tell them apart is the side to play's win rate at the
+  start: at least 0.3 in all 165 right guesses, below 0.3 in 20 of the 22 wrong
+  ones (kata v2s9).
+
+### Engine check of the attacker (baduk D10)
+
+The app checks a stones guess with the engine (`chooseAttacker`, `AUTO_ATTACKER`
+in `tsumegoframe.js`; `checkAutoAttacker` in `sabaki.js`): at 500 visits from
+the problem start, a side to play below 0.3 has the flipped frame analysed, and
+the flip is kept if the side to play reaches 0.3 with it. Otherwise the guess
+stays and the menu warns that the side to play loses with either attacker.
+
+Validation on a fresh sample (seed 2, 200 problems, 14 shared with the first;
+b10, `--auto-attacker`, 2026-11-22): 153 PASS, 36 ALT, 11 FAIL, against 142, 23
+and 35 for the first sample with the stones guess.
+
+- **24 flips, all PASS or ALT.** Each had the side to play at 0.08 or less with
+  the guess and 0.77 or more with the flip; no flip landed between.
+- **9 warnings, all FAILs:** 5 `engine-dead`, 2 `ko`, 2 `frame`.
+- **2 FAILs unflagged:** Maeda 1k-5k 167 (`attacker`: the side to play wins with
+  the wrong attacker too, at 0.99, like 2 of the first sample's 22) and
+  Hashimoto MTAP Elementary 038 (`frame`, win 0.65).
+- One `attacker` FAIL remains, against 22 before.
 - **Frame: the engine, not the frame (kata 9ds2).** These fail with either
   attacker, a ko threat and 10000 visits. Framed with the side to play
   defending, all 12 score the defender's lead after the SOL move at -L within
