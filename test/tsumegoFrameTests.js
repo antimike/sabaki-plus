@@ -2,7 +2,9 @@ import assert from 'assert'
 import Board from '@sabaki/go-board'
 
 import {
+  AUTO_ATTACKER,
   applyTsumegoFrame,
+  chooseAttacker,
   estimateLivingArea,
   getTsumegoFrame,
   getWindowVertices,
@@ -641,6 +643,38 @@ describe('tsumegoframe', () => {
 
       map = position(19, ['OO', 'O.'])
       assert.strictEqual(guessAttacker(map, [[0, 0]]), 1)
+    })
+  })
+
+  describe('chooseAttacker', () => {
+    let {maxWin} = AUTO_ATTACKER
+
+    it('keeps the guess when the side to play is not losing', () => {
+      assert.deepStrictEqual(chooseAttacker(1, maxWin), {
+        attacker: 1,
+        flipped: false,
+        suspect: false,
+      })
+    })
+
+    it('asks for the flipped search when the side to play is losing', () => {
+      assert.strictEqual(chooseAttacker(1, maxWin - 0.01), null)
+    })
+
+    it('flips when the side to play wins with the flipped attacker', () => {
+      assert.deepStrictEqual(chooseAttacker(-1, 0.05, maxWin), {
+        attacker: 1,
+        flipped: true,
+        suspect: false,
+      })
+    })
+
+    it('keeps the guess and flags it when both attackers lose', () => {
+      assert.deepStrictEqual(chooseAttacker(1, 0.02, maxWin - 0.01), {
+        attacker: 1,
+        flipped: false,
+        suspect: true,
+      })
     })
   })
 
