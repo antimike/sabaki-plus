@@ -9,7 +9,8 @@ const {
 
 // Fork-only (baduk D5, kata mer7 and xtpb): with the tsumego frame on, the
 // heatmap and the best line from a real engine stay inside the cropped window
-// and never touch frame stones, also under a board rotation.
+// and never touch frame stones, also under a board rotation. kata tfg1: the
+// session attacker override reaches the engine, and Show Frame does not.
 //
 // This needs a real KataGo, so it is skipped unless SABAKI_E2E_KATAGO names the
 // binary; SABAKI_E2E_KATAGO_ARGS holds its arguments (`gtp -model ... -config
@@ -94,6 +95,51 @@ async function shown(page) {
   })
 }
 
+// Let the search grow a real candidate list and line, then stop the engine so
+// the analysis is fixed while it is checked.
+async function waitForSearch(page) {
+  await page.waitForFunction(
+    ({minVisits, minLine}) => {
+      let s = window.__sabaki.state
+      let a = s.analysis
+      if (a == null || s.analysisTreePosition !== s.treePosition) return false
+      let visits = a.variations.reduce((sum, v) => sum + v.visits, 0)
+      let longest = Math.max(...a.variations.map((v) => v.moves.length))
+      return visits >= minVisits && longest >= minLine
+    },
+    {minVisits: MIN_VISITS, minLine: MIN_LINE},
+    {timeout: 120000},
+  )
+  await page.evaluate(() =>
+    window.__sabaki.inferredState.analyzingEngineSyncer.sendAbort(),
+  )
+  await waitForRender(page)
+}
+
+// What the engine was last synced to: komi and stones played, by colour.
+async function engineState(page) {
+  return page.evaluate(() => {
+    let {komi, history} =
+      window.__sabaki.inferredState.analyzingEngineSyncer.state
+    let plays = history.filter((c) => c.name === 'play')
+    let count = (color) =>
+      plays.filter((c) => c.args[0].toUpperCase() === color).length
+
+    return {komi, black: count('B'), white: count('W')}
+  })
+}
+
+// What the engine should get for the current frame: its komi and stones.
+async function expectedEngineState(page) {
+  return page.evaluate(() => {
+    let s = window.__sabaki
+    let frame = s.getAnalysisFrame(s.state.treePosition)
+    let count = (sign) => frame.signMap.flat().filter((x) => x === sign).length
+
+    return {komi: frame.komi, black: count(1), white: count(-1)}
+  })
+}
+
 const key = ([x, y]) => `${x},${y}`
 const sortVs = (vs) => vs.map(key).sort()
 
@@ -127,25 +173,7 @@ test.describe('engine analysis inside the tsumego frame window', () => {
     try {
       await page.evaluate((id) => window.__sabaki.startAnalysis(id), syncerId)
 
-      // Let the search grow a real candidate list and line, then stop the
-      // engine so the analysis is fixed while it is checked.
-      await page.waitForFunction(
-        ({minVisits, minLine}) => {
-          let s = window.__sabaki.state
-          let a = s.analysis
-          if (a == null || s.analysisTreePosition !== s.treePosition)
-            return false
-          let visits = a.variations.reduce((sum, v) => sum + v.visits, 0)
-          let longest = Math.max(...a.variations.map((v) => v.moves.length))
-          return visits >= minVisits && longest >= minLine
-        },
-        {minVisits: MIN_VISITS, minLine: MIN_LINE},
-        {timeout: 120000},
-      )
-      await page.evaluate(() =>
-        window.__sabaki.inferredState.analyzingEngineSyncer.sendAbort(),
-      )
-      await waitForRender(page)
+      await waitForSearch(page)
 
       let a = await analysisState(page)
       expect(a.window).toEqual(WINDOW)
@@ -214,6 +242,65 @@ test.describe('engine analysis inside the tsumego frame window', () => {
     } finally {
       await setTransformation(page, '')
       await page.evaluate(() => window.__sabaki.stopAnalysis())
+      await detachAndWait(page, [syncerId])
+    }
+  })
+
+  // Fork-only (kata tfg1): the session attacker override reaches the engine
+  // (a new frame, komi and stones), the analysis stays in the window, and
+  // Show Frame changes only the display.
+  test('attacker override and Show Frame', async ({page}) => {
+    await page.evaluate(() => {
+      window.sabaki.setting.set('board.analysis_whole_board', false)
+      window.sabaki.setting.set('board.show_analysis', true)
+    })
+    await loadSgfStringAndWait(page, CORNER)
+    await waitForRender(page)
+
+    let [syncerId] = await attachAndWaitForEngines(page, [
+      {name: 'KataGo', path: KATAGO, args: KATAGO_ARGS},
+    ])
+
+    try {
+      await page.evaluate((id) => window.__sabaki.startAnalysis(id), syncerId)
+      await waitForSearch(page)
+
+      let auto = await expectedEngineState(page)
+      expect(await engineState(page)).toEqual(auto)
+
+      await page.evaluate(() => {
+        window.__sabaki.setFrameAttacker(-1)
+        window.__sabaki.setShowFrame(true)
+      })
+      let white = await expectedEngineState(page)
+      expect(white).not.toEqual(auto)
+
+      await expect.poll(() => engineState(page)).toEqual(white)
+      await page.evaluate(() => window.__sabaki.setState({analysis: null}))
+      await page.evaluate(() => window.__sabaki.restartAnalysis())
+      await waitForSearch(page)
+
+      let a = await analysisState(page)
+      expect(a.window).toEqual(WINDOW)
+      for (let v of a.variations) {
+        for (let m of [v.vertex, ...v.moves]) {
+          expect(inBox(m, WINDOW), `move ${m} in window`).toBe(true)
+        }
+      }
+
+      // The overlay shows the whole board, but heat only in the window.
+      let s = await shown(page)
+      expect({rangeX: s.rangeX, rangeY: s.rangeY}).toEqual({
+        rangeX: [0, 18],
+        rangeY: [0, 18],
+      })
+      expect(sortVs(s.heat)).toEqual(sortVs(a.variations.map((v) => v.vertex)))
+    } finally {
+      await page.evaluate(() => {
+        window.__sabaki.setShowFrame(false)
+        window.__sabaki.setFrameAttacker(null)
+        window.__sabaki.stopAnalysis()
+      })
       await detachAndWait(page, [syncerId])
     }
   })
