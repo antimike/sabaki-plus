@@ -258,6 +258,77 @@ test.describe('tsumego frame controls', () => {
       'Attacker: Auto': {checked: true, enabled: false},
     })
   })
+
+  // Fork-only (kata 899v): ko threats per colour, 0 to 3; the checked count
+  // says how many the frame could place when fewer fit.
+  test('ko threat counts show how many were placed', async ({
+    electronApp,
+    page,
+  }) => {
+    let koMenu = (color) =>
+      electronApp.evaluate(({Menu}, color) => {
+        let strip = (label) => label.replace(/&/g, '')
+        let find = (items, label) =>
+          items.find((item) => strip(item.label) === label)
+        let engines = find(Menu.getApplicationMenu().items, 'Engines')
+        let frame = find(engines.submenu.items, 'Tsumego Frame')
+        let ko = find(frame.submenu.items, `Ko Threats for ${color}`)
+
+        return {
+          enabled: ko.enabled,
+          items: ko.submenu.items.map((item) => ({
+            label: strip(item.label),
+            checked: item.checked,
+          })),
+        }
+      }, color)
+    let clickKo = (color, count) =>
+      electronApp.evaluate(
+        ({Menu, BrowserWindow}, [color, count]) => {
+          let strip = (label) => label.replace(/&/g, '')
+          let find = (items, label) =>
+            items.find((item) => strip(item.label) === label)
+          let engines = find(Menu.getApplicationMenu().items, 'Engines')
+          let frame = find(engines.submenu.items, 'Tsumego Frame')
+          let ko = find(frame.submenu.items, `Ko Threats for ${color}`)
+
+          ko.submenu.items[count].click(
+            undefined,
+            BrowserWindow.getAllWindows()[0],
+          )
+        },
+        [color, count],
+      )
+
+    await setWholeBoard(page, false)
+    await loadSgfStringAndWait(page, CORNER)
+    await waitForRender(page)
+
+    let start = await koMenu('Black')
+    expect(start.enabled).toBe(true)
+    expect(start.items).toEqual([
+      {label: '0', checked: true},
+      {label: '1', checked: false},
+      {label: '2', checked: false},
+      {label: '3', checked: false},
+    ])
+
+    await clickKo('Black', 3)
+    let placed = await page.evaluate(
+      () => window.__sabaki.getProblemFrame().koThreats.B,
+    )
+    expect(placed).toBeLessThan(3)
+
+    await expect
+      .poll(async () => (await koMenu('Black')).items[3])
+      .toEqual({label: `3 (${placed} placed)`, checked: true})
+    expect((await koMenu('White')).items[0].checked).toBe(true)
+
+    await clickKo('Black', 0)
+    await expect
+      .poll(async () => (await koMenu('Black')).items[0].checked)
+      .toBe(true)
+  })
 })
 
 // What Show Frame draws: vertex count, faint ghost stones by colour, and the

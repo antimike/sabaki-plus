@@ -37,6 +37,8 @@ exports.get = function (props = {}) {
     autoAttacker,
     autoAttackerSource,
     showFrame,
+    frameKoThreats = {B: 0, W: 0},
+    placedKoThreats = null,
     showCoordinates,
     coordinatesType,
     showMoveNumbers,
@@ -585,6 +587,36 @@ exports.get = function (props = {}) {
               enabled: !wholeBoardAnalysis && autoAttacker != null,
               click: () => sabaki.setFrameAttacker(-1),
             },
+            {type: 'separator'},
+            // Fork (baduk 899v): ko threats built into the frame, per colour;
+            // the count asked for shows how many fit when fewer did.
+            ...[
+              ['B', i18n.t('menu.engines', 'Ko Threats for &Black')],
+              ['W', i18n.t('menu.engines', 'Ko Threats for W&hite')],
+            ].map(([color, label]) => ({
+              label,
+              enabled: !wholeBoardAnalysis && autoAttacker != null,
+              submenu: [0, 1, 2, 3].map((count) => {
+                let placed = placedKoThreats?.[color]
+                let short =
+                  count === frameKoThreats[color] &&
+                  placed != null &&
+                  placed < count
+
+                return {
+                  label: short
+                    ? i18n.t(
+                        'menu.engines',
+                        (p) => `&${p.count} (${p.placed} placed)`,
+                        {count, placed},
+                      )
+                    : `&${count}`,
+                  type: 'radio',
+                  checked: frameKoThreats[color] === count,
+                  click: () => sabaki.setFrameKoThreats(color, count),
+                }
+              }),
+            })),
             {type: 'separator'},
             {
               label: i18n.t('menu.engines', '&Show Frame'),

@@ -42,6 +42,11 @@ const STRIP = ['..OOOO..', '.OXXXXO.', '.OX..XO.', '..X..X..']
 // White kills there.
 const STRAIGHT_THREE = ['...XO', 'XXXXO', 'OOOOO']
 
+// The same with a stray attacker stone that widens the window. Only its
+// geometry matters: with an attacker ko threat, the defender's share ends
+// partway down a one-line strip along the far edge (kata 899v).
+const WIDE_THREE = ['...XO', 'XXXXO', 'OOOOO.O']
+
 // The same on the side, a larger group.
 const SIDE_THREE = [
   'OXXXXX...XXXXXO',
@@ -176,9 +181,18 @@ function checkFrame(map, frame) {
     }
   }
 
-  // Every frame chain is made only of frame stones and has two eyes.
+  // Every frame chain is made only of frame stones and has two eyes, except
+  // ko threat groups, which live on their straight four.
+  let threatEyes = new Set((frame.koThreatVertices ?? []).map(String))
+
   for (let {chain, eyes, allFrame} of frameChains(board, frame.frameVertices)) {
     assert.ok(allFrame, `frame chain at ${chain[0]} joined a problem stone`)
+
+    let isThreat = board
+      .getLiberties(chain[0])
+      .every((v) => threatEyes.has(String(v)))
+    if (isThreat) continue
+
     assert.ok(eyes >= 2, `frame chain at ${chain[0]} has ${eyes} eye(s)`)
   }
 
@@ -263,6 +277,191 @@ describe('tsumegoframe', () => {
           assert.ok(Math.abs(won + lost) <= 2, `${label}: ${won} vs ${lost}`)
         }
       }
+    })
+
+    describe('ko threats', () => {
+      // The threats in a frame, one per straight four: the threatener, the
+      // threatened group and its ring.
+      function threats(frame) {
+        let board = new Board(frame.signMap)
+        let eyes = frame.koThreatVertices
+        let result = []
+
+        for (let i = 0; i < eyes.length; i += 4) {
+          let four = eyes.slice(i, i + 4)
+          let stone = board
+            .getNeighbors(four[0])
+            .find((v) => board.get(v) !== 0)
+          let chain = board.getChain(stone)
+          let ring = new Set()
+
+          for (let v of chain) {
+            for (let n of board.getNeighbors(v)) {
+              if (board.get(n) === -board.get(stone)) ring.add(String(n))
+            }
+          }
+
+          result.push({
+            threatener: -board.get(stone),
+            four,
+            chain,
+            liberties: board.getLiberties(stone),
+            ringSigns: [...ring].map((v) =>
+              board.get(v.split(',').map(Number)),
+            ),
+          })
+        }
+
+        return result
+      }
+
+      it('is the plain frame when no threats are asked for', () => {
+        let map = position(19, CORNER)
+        let plain = getTsumegoFrame(map)
+
+        assert.deepStrictEqual(plain.koThreats, {B: 0, W: 0})
+        assert.deepStrictEqual(plain.koThreatVertices, [])
+        assert.deepStrictEqual(
+          getTsumegoFrame(map, {koThreats: {B: 0, W: 0}}),
+          plain,
+        )
+      })
+
+      it('builds each threat as a group living on a straight four', () => {
+        let map = position(19, CORNER)
+        let frame = getTsumegoFrame(map, {koThreats: {B: 1, W: 1}})
+
+        checkFrame(map, frame)
+        assert.deepStrictEqual(frame.koThreats, {B: 1, W: 1})
+        assert.strictEqual(frame.koThreatVertices.length, 8)
+
+        let found = threats(frame)
+        assert.deepStrictEqual(found.map((t) => t.threatener).sort(), [-1, 1])
+
+        for (let {threatener, four, chain, liberties, ringSigns} of found) {
+          // Four empty points in a line on the board edge
+          assert.ok(four.every((v) => frame.signMap[v[1]][v[0]] === 0))
+          let onEdge = (v) => v.some((c) => c === 0 || c === 18)
+          assert.ok(four.every(onEdge), `${four} not on the edge`)
+          let [dx, dy] = [four[3][0] - four[0][0], four[3][1] - four[0][1]]
+          assert.strictEqual(Math.abs(dx) + Math.abs(dy), 3)
+
+          // The group's only liberties, a ring of the threatener's stones
+          assert.deepStrictEqual(
+            liberties.map(String).sort(),
+            four.map(String).sort(),
+          )
+          assert.ok(ringSigns.every((s) => s === threatener))
+
+          // Big enough to outweigh the fight: living area 10 here, plus 10
+          let area = chain.length + 4
+          assert.ok(area >= 20, `threat of ${area} points`)
+
+          // Beyond the wall
+          for (let v of chain) {
+            assert.ok(distanceFromWindow(v, frame.window) > 4, `${v}`)
+          }
+        }
+      })
+
+      it("puts a threat in its own side's zone", () => {
+        // A defender threat sits in the defender's territory, far from the
+        // window; an attacker threat next to the wall.
+        let map = position(19, CORNER)
+        let frame = getTsumegoFrame(map, {koThreats: {B: 1, W: 1}})
+        let defender = -frame.attacker
+        let far = (t) =>
+          Math.min(...t.chain.map((v) => distanceFromWindow(v, frame.window)))
+
+        let [mine, theirs] = [defender, frame.attacker].map((sign) =>
+          threats(frame).find((t) => t.threatener === sign),
+        )
+        assert.ok(far(mine) > far(theirs), `${far(mine)} vs ${far(theirs)}`)
+      })
+
+      it('balances threats with territory, not komi', () => {
+        // In CORNER White attacks. Defender threats are balanced by a larger
+        // defender share. An attacker threat shrinks that share, and here its
+        // edge then leaves a one-line attacker strip that cannot live; komi
+        // takes up those points, so it may reach about one threat's area
+        // (see the balance test below for the outcomes).
+        for (let [koThreats, maxKomi] of [
+          [{B: 1}, 2],
+          [{B: 2}, 2],
+          [{W: 1}, 21],
+          [{B: 1, W: 1}, 21],
+        ]) {
+          let map = position(19, CORNER)
+          let frame = getTsumegoFrame(map, {koThreats})
+
+          checkFrame(map, frame)
+          assert.ok(
+            Math.abs(frame.komi) <= maxKomi,
+            `${JSON.stringify(koThreats)}: komi ${frame.komi}`,
+          )
+        }
+      })
+
+      it('keeps the defender winning by living and losing by dying', () => {
+        // Threat groups count as their owner's area in the komi, as an area
+        // count of the final position does.
+        // With an attacker threat the defender's share shrinks, and in some
+        // frames its edge then leaves the attacker a one-line strip that
+        // cannot live; the defender owns those points in the count.
+        let vital = [1, 0]
+        let cases = []
+
+        for (let shape of [STRAIGHT_THREE, WIDE_THREE]) {
+          for (let defender of [1, -1]) {
+            for (let koThreats of [{B: 1}, {W: 1}, {B: 1, W: 1}]) {
+              for (let size of [19, 13]) {
+                cases.push({shape, defender, koThreats, size})
+              }
+            }
+          }
+        }
+
+        for (let {shape, defender, koThreats, size} of cases) {
+          let rows = shape.map((row) =>
+            defender > 0
+              ? row
+              : row.replace(/X|O/g, (c) => (c === 'X' ? 'O' : 'X')),
+          )
+          let map = position(size, rows)
+          let frame = getTsumegoFrame(map, {attacker: -defender, koThreats})
+          if (frame.koThreatVertices.length === 0) continue
+
+          let {alive, dead} = outcomes(map, frame, vital)
+          let lead = (signMap) => defender * (areaScore(signMap) - frame.komi)
+          let [won, lost] = [lead(alive), lead(dead)]
+          let label = `${shape[2]} size ${size} defender ${defender} ${JSON.stringify(koThreats)}`
+
+          assert.ok(won >= 5, `${label}: alive defender leads by ${won}`)
+          assert.ok(lost <= -5, `${label}: dead defender leads by ${lost}`)
+          assert.ok(Math.abs(won + lost) <= 2, `${label}: ${won} vs ${lost}`)
+        }
+      })
+
+      it('places as many as fit and reports how many', () => {
+        let map = position(13, CORNER)
+        let frame = getTsumegoFrame(map, {koThreats: {B: 3, W: 3}})
+
+        checkFrame(map, frame)
+        assert.ok(frame.koThreats.B <= 3 && frame.koThreats.W <= 3)
+        assert.ok(frame.koThreats.B + frame.koThreats.W < 6)
+        assert.strictEqual(
+          frame.koThreatVertices.length,
+          4 * (frame.koThreats.B + frame.koThreats.W),
+        )
+      })
+
+      it('asks for 0 to 3 threats per side', () => {
+        let map = position(19, CORNER)
+        let frame = getTsumegoFrame(map, {koThreats: {B: 7, W: -2}})
+
+        assert.ok(frame.koThreats.B <= 3)
+        assert.strictEqual(frame.koThreats.W, 0)
+      })
     })
 
     it('returns null when balancing would need too large a komi', () => {
