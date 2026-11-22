@@ -20,6 +20,13 @@
 //   attacker        passes with the attacker flipped (kata v2s9)
 //   ko              passes with one frame ko threat for the defender
 //   depth           passes at --rerun-visits
+//   engine-dead     the engine reads the book move as failing (kata 9ds2):
+//                   framed with the side to play defending, the defender's
+//                   lead after the SOL move is the frame's "defender dead"
+//                   score, -L (L the living-area estimate) within
+//                   DEAD_TOLERANCE. The frame is balanced as designed; the
+//                   engine and the book disagree (a misread, or a ko or seki
+//                   answer). Try a stronger --model.
 //   frame           none of the above: frame komi or balance
 //
 // A control search per problem, with no frame and no restriction (komi 0),
@@ -54,6 +61,7 @@ import {fileURLToPath} from 'url'
 
 import {
   getTsumegoFrame,
+  estimateLivingArea,
   getWindowVertices,
 } from '../../src/modules/tsumegoframe.js'
 
@@ -448,7 +456,41 @@ async function check(engine, p, args) {
     if (passes(r)) return {...result, cause}
   }
 
-  return {...result, cause: 'frame'}
+  let dead = await deadAfterSol(engine, p, args['rerun-visits'])
+  if (dead != null) result.dead = dead
+  return {...result, cause: dead?.dead ? 'engine-dead' : 'frame'}
+}
+
+// 9ds2: the 12 frame FAILs of the 2026-11-21 run scored within 1.9 of -L
+// after the SOL move at 10000 visits (Fujisawa Int. 45 was 3.3 off at 4000).
+const DEAD_TOLERANCE = 3
+
+// The defender's lead after the SOL move, framed with the side to play
+// defending, against the frame's "defender dead" score -L.
+async function deadAfterSol(engine, p, visits) {
+  let frame = buildFrame(p, {attacker: -p.toPlay})
+  if (frame == null) return null
+
+  let sol = solInWindow(p, frame)[0]
+  if (sol == null) return null
+
+  let {rangeX, rangeY} = frame.window
+  let livingArea = estimateLivingArea(p.signMap, p.toPlay, rangeX, rangeY)
+  let infos = await search(engine, {
+    signMap: frame.signMap,
+    frame,
+    toPlay: p.toPlay,
+    moves: [coord(sol)],
+    visits,
+  })
+  // After the SOL move the attacker is to move: its lead, negated.
+  let lead = -(infos[0]?.scoreLead ?? 0)
+
+  return {
+    livingArea,
+    lead: r2(lead),
+    dead: Math.abs(lead + livingArea) <= DEAD_TOLERANCE,
+  }
 }
 
 // Reports
@@ -495,6 +537,7 @@ function summarize(results) {
     'attacker',
     'ko',
     'depth',
+    'engine-dead',
     'frame',
   ]
   out.push('', row(['cause', 'n']), row(['---', '---']))
