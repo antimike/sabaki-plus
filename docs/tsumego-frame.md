@@ -165,10 +165,18 @@ Playing inside the four threatens to kill; the answer leaves the group alive, so
 a played and answered threat does not change the score (KataGo: 0505 with the
 threat spent first scores −9.7 against −10.3 without it). The group is a
 rectangle 6 to 10 points along the edge and at least 3 deep, with area (stones
-plus the four) at least `L + 6` (`KO_THREAT_MARGIN`): ignoring a threat must
-cost more than the ko. The one hand-tested shape had 18 points on a living area
-of 10; `L + 6` rounds up to it. The size is static; the engine-based `L` (4hv5)
-would refine it.
+plus the four) at least `L + 10` (`KO_THREAT_MARGIN`): ignoring a threat must
+cost more than the ko. An ignored threat swings the score by twice its area. On
+0505 the ko swings it by about 29 (alive +19.1, dead −10.3), more than `2L` = 20
+because `L` runs low there (10 against about 15). The first margin, `L + 6`,
+gave 18 points, a swing of 36, and with one threat each KataGo found the threat
+and the ko nearly equal. `L + 10` gives 21 points, a swing of 42. Across the
+2,553 Cho problems that get a frame, one threat per side fits in 91% of them at
+`L + 10` (90% at `L + 6`). The size is static; the engine-based `L` (4hv5) would
+refine it. Sizing threats by how many are asked for (one large threat, or
+several smaller ones sharing a fixed total) was considered and rejected: each
+threat must outweigh the ko on its own, so shrinking threats as their number
+grows would stop them being threats.
 
 **Placement.** Rectangle and ring lie in T's zone beyond the wall, not in a
 corner, at least three lines from other threats, and every frame group around
@@ -178,7 +186,17 @@ defender gets the far side), so attacker threats are reserved first, next to the
 wall, with the ring allowed on the wall's last line so it joins the living wall.
 Threats alternate between the colours until each has its count or no site is
 left; the result reports `koThreats` (placed per colour) and `koThreatVertices`
-(the eye points).
+(the eye points). Asking for two per side rarely places all four: there is
+seldom room for a second attacker threat next to the wall.
+
+**Side groups only.** Threat groups are never placed in a board corner: every
+threat is a side group, with the threatener's stones closing both ends, because
+that is the shape tested with KataGo. A corner version (the group touching two
+edges) very likely works too, since a straight four lives anywhere and the group
+has no outside liberties either way, but it is untested. The cost is room:
+corners are often the points farthest from the window. Re-evaluate this when
+KataGo is used to evaluate ko fights precisely (the engine-based `L`, kata
+4hv5): test the corner shape then and allow it if it holds.
 
 **Balance.** A threat group counts as its owner's area: a defender threat puts
 attacker area into the defender's territory, so the defender's share grows by
@@ -196,19 +214,22 @@ heatmap, but the winrate and score shown are taken over every candidate, so they
 stay right when the best move is a threat or a pass. Marking such moves on the
 board is kata mcms.
 
-Validation (2026-11-21, b10c384h6nbttflrs, 3000 visits, frame komi, area rules;
-Cho problems, defender's win rate at the problem start):
+Validation (2026-11-21, b10c384h6nbttflrs, 3000 visits, frame komi, area rules,
+margin `L + 10`; Cho problems, defender's win rate at the problem start):
 
 | problem               | ko for    | none | B 1  | W 1 | B 1, W 1 | B 2, W 1 |
 | --------------------- | --------- | ---- | ---- | --- | -------- | -------- |
-| Intermediate 0505     | B to live | 0%   | 98%  | 0%  | 1%       | 97%      |
+| Intermediate 0505     | B to live | 0%   | 98%  | 0%  | 0%       | 97%      |
 | Elementary 0299, 0319 | B to kill | 100% | 0–1% |     |          |          |
 | Elementary 0565       | B to kill | 99%  | 0%   |     |          |          |
 
 With one threat the book answer becomes KataGo's best move in each; with equal
 threats the side that takes the ko first wins, as it should. Elementary 0305 was
 inconclusive: its frame is about 27 points off before any ko (kata v2s9). On
-0505 threats leave the alive–dead midpoint where it was (+4.2 against +4.3).
+0505 threats leave the alive–dead midpoint where it was (+4.2 against +4.3). At
+`L + 6` the results were the same except for one threat each on 0505: Black then
+gave up White's threat group to finish the ko and lost by 3.6. At `L + 10` it
+answers the threat and loses the ko, by 9.7.
 
 ## When there is no frame
 
