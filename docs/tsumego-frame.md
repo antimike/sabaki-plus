@@ -359,10 +359,18 @@ and 35 for the first sample with the stones guess.
 - **24 flips, all PASS or ALT.** Each had the side to play at 0.08 or less with
   the guess and 0.77 or more with the flip; no flip landed between.
 - **9 warnings, all FAILs:** 5 `engine-dead`, 2 `ko`, 2 `frame`.
-- **2 FAILs unflagged:** Maeda 1k-5k 167 (`attacker`: the side to play wins with
-  the wrong attacker too, at 0.99, like 2 of the first sample's 22) and
-  Hashimoto MTAP Elementary 038 (`frame`, win 0.65).
-- One `attacker` FAIL remains, against 22 before.
+- **2 FAILs unflagged:** Maeda 1k-5k 167 and Hashimoto MTAP Elementary 038
+  (`frame`, win 0.65).
+- **167 is not a wrong guess** (checked by hand, 5000 visits): Black surrounds
+  White's corner group, so the guess (Black attacking) is right; KataGo kills
+  with S19, while the book's S15 lets White live (+18.4). It is labelled
+  `attacker` only because the flipped frame makes Black a defender whose outer
+  wall lives anyway, so any reasonable move wins. The `attacker` rerun is
+  therefore not proof of a wrong guess when the side to play wins with the guess
+  at the start. The first sample's two such cases (Maeda 1k-5k 184, Hashimoto
+  Fifty Three To Go 006: the top move wins, the SOL move loses, the flip passes)
+  have the same signature and are not checked; so "20 of 22" above may be 20
+  of 20.
 - **Frame: the engine, not the frame (kata 9ds2).** These fail with either
   attacker, a ko threat and 10000 visits. Framed with the side to play
   defending, all 12 score the defender's lead after the SOL move at -L within
