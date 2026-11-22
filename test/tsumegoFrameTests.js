@@ -353,9 +353,9 @@ describe('tsumegoframe', () => {
           )
           assert.ok(ringSigns.every((s) => s === threatener))
 
-          // Big enough to outweigh the fight: living area 10 here, plus 6
+          // Big enough to outweigh the fight: living area 10 here, plus 10
           let area = chain.length + 4
-          assert.ok(area >= 16, `threat of ${area} points`)
+          assert.ok(area >= 20, `threat of ${area} points`)
 
           // Beyond the wall
           for (let v of chain) {
@@ -379,14 +379,24 @@ describe('tsumegoframe', () => {
         assert.ok(far(mine) > far(theirs), `${far(mine)} vs ${far(theirs)}`)
       })
 
-      it('keeps komi near zero with threats on either side', () => {
-        for (let koThreats of [{B: 1}, {W: 1}, {B: 1, W: 1}, {B: 2}]) {
+      it('balances threats with territory, not komi', () => {
+        // In CORNER White attacks. Defender threats are balanced by a larger
+        // defender share. An attacker threat shrinks that share, and here its
+        // edge then leaves a one-line attacker strip that cannot live; komi
+        // takes up those points, so it may reach about one threat's area
+        // (see the balance test below for the outcomes).
+        for (let [koThreats, maxKomi] of [
+          [{B: 1}, 2],
+          [{B: 2}, 2],
+          [{W: 1}, 21],
+          [{B: 1, W: 1}, 21],
+        ]) {
           let map = position(19, CORNER)
           let frame = getTsumegoFrame(map, {koThreats})
 
           checkFrame(map, frame)
           assert.ok(
-            Math.abs(frame.komi) <= 2,
+            Math.abs(frame.komi) <= maxKomi,
             `${JSON.stringify(koThreats)}: komi ${frame.komi}`,
           )
         }

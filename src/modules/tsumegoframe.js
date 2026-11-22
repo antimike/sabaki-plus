@@ -43,9 +43,10 @@ const MIN_EYE_SPACE = 3 // a stone on the vital point plus two eyes
 const MAX_KOMI = 250
 // Ko threats (baduk 899v): a threat's group must be worth more than the local
 // fight. Its area (stones plus eye space) is at least the living area plus
-// this margin. The one shape tested with KataGo (Cho Intermediate 0505,
-// living area 10) had 18 points and worked; L + 6 rounds up to that shape.
-const KO_THREAT_MARGIN = 6
+// this margin. L runs low (Cho Intermediate 0505: estimate 10, about 15 from
+// KataGo's scores), and an 18-point threat there outweighed the ko by only
+// about 7 points; L + 10 gives 21 points, worth 42 against a ko of about 29.
+const KO_THREAT_MARGIN = 10
 const KO_THREAT_MIN_DEPTH = 3 // rows, as in the tested shape
 const KO_THREAT_MAX_WIDTH = 10
 const KO_THREAT_MAX = 3
