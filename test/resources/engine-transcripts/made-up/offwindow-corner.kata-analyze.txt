@@ -1,0 +1,4 @@
+# Made up for e2e/offwindow-bar.spec.js (baduk mcms), not recorded: kata-analyze
+# output for the corner fixture with one candidate in the window (B18), one off
+# it (K10, standing in for a frame ko threat) and a pass. K10 has the most visits.
+info move K10 visits 80 winrate 0.97 scoreLead 19.7 order 0 pv K10 L10 B18 info move B18 visits 30 winrate 0.6 scoreLead 3.1 order 1 pv B18 A18 info move pass visits 20 winrate 0.41 scoreLead -2 order 2 pv pass B18

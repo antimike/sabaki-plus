@@ -12,7 +12,10 @@ import i18n from '../i18n.js'
 import {getBoard, getRootProperty} from './gametree.js'
 import {noop, equals} from './helper.js'
 import {parseAnalysis} from './analysis.js'
-import {restrictAnalysisToWindow} from './tsumegoframe.js'
+import {
+  foldOffWindowAnalysis,
+  restrictAnalysisToWindow,
+} from './tsumegoframe.js'
 
 const t = i18n.context('EngineSyncer')
 const setting = {
@@ -145,7 +148,11 @@ export default class EngineSyncer extends EventEmitter {
             // Parse analysis info
 
             if (line.startsWith('info ')) {
-              let allVariations = parseAnalysis(line, board, winrateFormat)
+              // Fork (baduk mcms): under a frame, a pass is a candidate too
+              // (Tenuki); upstream drops it.
+              let allVariations = parseAnalysis(line, board, winrateFormat, {
+                includePass: analysisWindow != null,
+              })
               // Ignore an update with no parseable variations rather than let
               // Math.max(...[]) === -Infinity become a non-finite SBKV.
               if (allVariations.length === 0) return
@@ -153,15 +160,21 @@ export default class EngineSyncer extends EventEmitter {
               // Fork (baduk 899v): the position's winrate and score come from
               // every candidate, so they stay right when the best move is
               // outside the window (a frame ko threat, or a pass); only the
-              // candidates shown are kept inside it.
+              // candidates shown are kept inside it. The others are folded
+              // into Ko threat and Tenuki entries (mcms).
               let variations =
                 analysisWindow != null
                   ? restrictAnalysisToWindow(allVariations, analysisWindow)
                   : allVariations
+              let offWindow =
+                analysisWindow != null
+                  ? foldOffWindowAnalysis(allVariations, analysisWindow)
+                  : []
 
               this.analysis = {
                 sign,
                 variations,
+                offWindow,
                 winrate: Math.max(...allVariations.map(({winrate}) => winrate)),
                 scoreLead: Math.max(
                   ...allVariations.map(({scoreLead}) =>

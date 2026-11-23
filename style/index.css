@@ -20,6 +20,32 @@ main {
   bottom: 40px;
   background: #c2cb9c url('../img/ui/tatami.png') center;
 }
+/* Fork (baduk mcms): ko threat and tenuki candidates under a cropped board */
+#main.offwindow main {
+  bottom: 64px;
+}
+#offwindow {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 40px;
+  height: 24px;
+  line-height: 24px;
+  overflow: hidden;
+  text-align: center;
+  white-space: nowrap;
+  background: #1f2023;
+  color: #aaa;
+  font-size: 0.9em;
+}
+#offwindow .entry {
+  margin: 0 1em;
+}
+#offwindow .entry.best {
+  color: #fff;
+  font-weight: bold;
+}
+
 #goban {
   box-sizing: border-box;
   box-shadow: 0 5px 20px rgba(20, 0, 15, 0.8);

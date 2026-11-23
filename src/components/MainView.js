@@ -7,6 +7,7 @@ import GuessBar from './bars/GuessBar.js'
 import AutoplayBar from './bars/AutoplayBar.js'
 import ScoringBar from './bars/ScoringBar.js'
 import FindBar from './bars/FindBar.js'
+import OffWindowBar from './OffWindowBar.js'
 
 import sabaki from '../modules/sabaki.js'
 import * as gametree from '../modules/gametree.js'
@@ -52,6 +53,16 @@ export default class MainView extends Component {
         this.setState({gobanCrosshair: false})
       }
     })
+  }
+
+  componentDidUpdate() {
+    // Fork (baduk mcms): the off-window strip takes room from the board, so
+    // the goban must measure again when the strip comes or goes.
+    let reserved = this.offWindowReserved
+    if (reserved !== this.prevOffWindowReserved) {
+      this.prevOffWindowReserved = reserved
+      setTimeout(() => window.dispatchEvent(new Event('resize')), 0)
+    }
   }
 
   componentWillReceiveProps(nextProps) {
@@ -104,6 +115,7 @@ export default class MainView extends Component {
       boardTransformation,
       currentThemeId,
       showFrame,
+      analyzingEngineSyncerId,
 
       selectedTool,
       findText,
@@ -134,9 +146,24 @@ export default class MainView extends Component {
         ? sabaki.getAnalysisFrame(treePosition)
         : null
 
+    // Fork (baduk D5): show what the engine may play in, the frame's window,
+    // whether or not an engine is attached
+    let cropWindow = sabaki.getProblemFrame(gameTree)?.window ?? null
+    let currentAnalysis =
+      showAnalysis &&
+      analysisTreePosition != null &&
+      analysisTreePosition === treePosition
+        ? analysis
+        : null
+    // Fork (baduk mcms): a frame ko threat or a pass cannot show on the cropped
+    // board; a strip under it lists them while an engine analyses a problem.
+    // Its room is kept for the whole analysis so the board does not jump.
+    this.offWindowReserved =
+      showAnalysis && analyzingEngineSyncerId != null && cropWindow != null
+
     return h(
       'section',
-      {id: 'main'},
+      {id: 'main', class: this.offWindowReserved ? 'offwindow' : ''},
 
       h(
         'main',
@@ -150,12 +177,7 @@ export default class MainView extends Component {
             findVertex && mode === 'find' ? [findVertex] : highlightVertices,
           analysisType,
           analysisValueType,
-          analysis:
-            showAnalysis &&
-            analysisTreePosition != null &&
-            analysisTreePosition === treePosition
-              ? analysis
-              : null,
+          analysis: currentAnalysis,
           paintMap,
           dimmedStones: ['scoring', 'estimator'].includes(mode)
             ? deadStones
@@ -178,15 +200,16 @@ export default class MainView extends Component {
               ? selectedTool
               : null,
           transformation: boardTransformation,
-          // Fork (baduk D5): show what the engine may play in, the frame's
-          // window, whether or not an engine is attached
-          cropWindow: sabaki.getProblemFrame(gameTree)?.window ?? null,
+          cropWindow,
           frameOverlay,
 
           onVertexClick: this.handleGobanVertexClick,
           onLineDraw: this.handleGobanLineDraw,
         }),
       ),
+
+      this.offWindowReserved &&
+        h(OffWindowBar, {entries: currentAnalysis?.offWindow ?? []}),
 
       h(
         'section',
