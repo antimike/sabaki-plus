@@ -211,8 +211,21 @@ common: 16 points off on 0505 before the fix).
 **Engine.** The eye points join both `allow` lists, so threats can be played and
 answered at any depth. Candidates outside the window are still dropped from the
 heatmap, but the winrate and score shown are taken over every candidate, so they
-stay right when the best move is a threat or a pass. Marking such moves on the
-board is kata mcms.
+stay right when the best move is a threat or a pass. Until mcms the parser
+dropped pass candidates (as upstream does), so a best pass was missed; under a
+frame it now keeps them.
+
+**Ko threat and Tenuki strip (kata mcms).** The cropped board cannot show a
+frame threat or a pass, so while an engine analyses a framed problem with
+analysis shown, a strip under the board lists them: the best threat by visits as
+"Ko threat" and the pass as "Tenuki", each with win rate and score
+(`foldOffWindowAnalysis`). They are listed whenever the engine reports them,
+like heatmap cells, so their presence gives nothing away that turning analysis
+on does not; the one with the most visits of all candidates is highlighted. The
+strip keeps its room for the whole analysis so the board does not jump, and it
+follows the analysis toggle, in guess mode too (as the heatmap does). Answering
+a tenuki problem in guess mode is kata 8mf0; playing a threat from the board,
+758v.
 
 Validation (2026-11-21, b10c384h6nbttflrs, 3000 visits, frame komi, area rules,
 margin `L + 10`; Cho problems, defender's win rate at the problem start):
