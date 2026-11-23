@@ -107,6 +107,9 @@ function parseArgs(argv) {
     config: join(homedir(), '.config/katago/gtp.cfg'),
     'window-check': false,
     'auto-attacker': false,
+    'own-attacker': false,
+    'own-frame': 'none',
+    'signal-only': false,
     summary: null,
     files: [],
   }
@@ -122,8 +125,13 @@ function parseArgs(argv) {
     if (!(key in args) || key === 'files') {
       throw new Error(`unknown option ${argv[i]}`)
     }
-    if (key === 'window-check' || key === 'auto-attacker') args[key] = true
-    else args[key] = numeric.includes(key) ? Number(argv[++i]) : argv[++i]
+    if (
+      ['window-check', 'auto-attacker', 'own-attacker', 'signal-only'].includes(
+        key,
+      )
+    ) {
+      args[key] = true
+    } else args[key] = numeric.includes(key) ? Number(argv[++i]) : argv[++i]
   }
 
   return args
@@ -319,7 +327,18 @@ function parseInfo(out) {
 // One search. With a frame: frame komi and the app's allow lists for both
 // players; without: komi 0 and the whole board. `moves` are played first,
 // from `toPlay`. Winrates are for the side to move after `moves`.
-async function search(engine, {signMap, frame, toPlay, moves = [], visits}) {
+async function search(
+  engine,
+  {
+    signMap,
+    frame,
+    toPlay,
+    moves = [],
+    visits,
+    window = null,
+    ownership = false,
+  },
+) {
   let {gtp} = engine
   let stones = []
   for (let y = 0; y < size; y++) {
@@ -342,10 +361,11 @@ async function search(engine, {signMap, frame, toPlay, moves = [], visits}) {
 
   await gtp(`kata-set-param maxVisits ${visits}`)
   let command = `kata-search_analyze ${colorOf(player)}`
-  if (frame != null) {
+  let allowed = window ?? frame?.window
+  if (allowed != null) {
     let allow = [
-      ...getWindowVertices(frame.window),
-      ...(frame.koThreatVertices ?? []),
+      ...getWindowVertices(allowed),
+      ...(frame?.koThreatVertices ?? []),
     ]
       .map(coord)
       .concat(['pass'])
@@ -355,7 +375,19 @@ async function search(engine, {signMap, frame, toPlay, moves = [], visits}) {
     }
   }
 
-  return parseInfo(await gtp(command))
+  if (ownership) command += ' ownership true'
+
+  let out = await gtp(command)
+  let infos = parseInfo(out)
+  if (ownership) {
+    // Row by row from the top, for the side to move: made Black's here.
+    let own = (out.match(/ownership ([-\d.e ]+)/) ?? [])[1]
+    infos.own = own
+      ?.trim()
+      .split(/\s+/)
+      .map((v) => Number(v) * player)
+  }
+  return infos
 }
 
 // PASS / ALT / FAIL for one frame at `visits`.
@@ -442,6 +474,65 @@ async function autoAttacker(engine, p, frame) {
   return {guessWin, flipWin, ...choice}
 }
 
+// The ownership signal (kata 8ar0): search the problem start with each side
+// moving first (the attacker's turn is a pass by the side to play) and read
+// KataGo's ownership of the window's stones. A colour's `lost` is how many of
+// its window stones the other colour owns, summed over both move orders; the
+// defender is the colour that loses more. It does not assume the side to play
+// succeeds, so engine-dead and status problems still give a reading.
+//
+// `--own-frame` picks the position searched: `none` (default) is the bare
+// problem, komi 0, both players restricted to the guess's window; `guess` and
+// `flip` are the framed positions. The frames are not neutral: the frame's
+// wall belongs to the attacker, so it props up whichever colour it assumes.
+const OWN_ATTACKER = {visits: AUTO_ATTACKER.visits, minMargin: 1}
+
+async function ownAttacker(engine, p, frame, mode) {
+  let f =
+    mode === 'guess'
+      ? frame
+      : mode === 'flip'
+        ? buildFrame(p, {attacker: -frame.attacker})
+        : null
+  let stones = getWindowVertices(frame.window).filter(
+    ([x, y]) => p.signMap[y][x] !== 0,
+  )
+  let lost = {B: [], W: []}
+
+  for (let moves of [[], ['pass']]) {
+    let infos = await search(engine, {
+      signMap: f?.signMap ?? p.signMap,
+      frame: f,
+      window: frame.window,
+      toPlay: p.toPlay,
+      moves,
+      visits: OWN_ATTACKER.visits,
+      ownership: true,
+    })
+    for (let c of [1, -1]) {
+      let sum = 0
+      for (let [x, y] of stones) {
+        if (p.signMap[y][x] === c) sum += (1 - c * infos.own[y * size + x]) / 2
+      }
+      lost[colorOf(c)].push(r2(sum))
+    }
+  }
+
+  let total = (c) => lost[c][0] + lost[c][1]
+  let margin = r2(total('B') - total('W'))
+  let decided = Math.abs(margin) >= OWN_ATTACKER.minMargin
+  let attacker = decided ? (margin > 0 ? -1 : 1) : frame.attacker
+
+  return {
+    mode,
+    lost,
+    margin,
+    decided,
+    attacker,
+    flipped: attacker !== frame.attacker,
+  }
+}
+
 async function check(engine, p, args) {
   let frame = buildFrame(p)
   let result = {
@@ -450,14 +541,27 @@ async function check(engine, p, args) {
     author: p.author,
     toPlay: colorOf(p.toPlay),
     sol: p.sol.map(coord),
-    control: await control(engine, p, args.visits),
+    control: args['signal-only'] ? {} : await control(engine, p, args.visits),
   }
 
   if (frame == null) return {...result, verdict: 'FAIL', cause: 'no-frame'}
 
-  if (args['auto-attacker'] && frame.attackerSource === 'stones') {
-    result.auto = await autoAttacker(engine, p, frame)
-    if (result.auto.flipped) frame = buildFrame(p, {attacker: -frame.attacker})
+  // Both signals read the stones guess; --own-attacker's choice wins.
+  let guess = frame
+  if (args['auto-attacker'] && guess.attackerSource === 'stones') {
+    result.auto = await autoAttacker(engine, p, guess)
+    if (result.auto.flipped) frame = buildFrame(p, {attacker: -guess.attacker})
+  }
+
+  if (args['own-attacker'] && guess.attackerSource === 'stones') {
+    result.own = await ownAttacker(engine, p, guess, args['own-frame'])
+    frame = result.own.flipped
+      ? buildFrame(p, {attacker: -guess.attacker})
+      : guess
+  }
+
+  if (args['signal-only']) {
+    return {...result, guess: colorOf(guess.attacker), verdict: '-'}
   }
 
   Object.assign(result, {
