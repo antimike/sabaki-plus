@@ -63,17 +63,22 @@ Notes:
    `expected.json` that points at the problems; the format is in the spec's
    header. MH's is `~/Documents/baduk/private-tests`.
 
-## Settings folder: keep dev runs apart from an installed Sabaki
+## Settings folder: apart from an installed Sabaki
 
-`productName` is still `Sabaki`, so the fork reads and writes the same settings
-folder as an installed Sabaki (`~/.config/Sabaki` on Linux), engines list
-included. For development runs, give the fork its own folder:
+`productName` is still `Sabaki`, which would put the fork's settings in the
+same folder as an installed Sabaki (`~/.config/Sabaki` on Linux), engines list
+included. So `src/main.js` sets Electron's `userData` to
+`<appData>/sabaki-tsumego` (`~/.config/sabaki-tsumego`) before anything reads
+settings. `e2e/settings-folder.spec.js` checks it. A full rename (productName,
+window class, About text) is left for the decision on keeping the fork.
+
+An explicit `--user-data-dir` still wins, for a throwaway folder in a dev run:
 
 ```
 npx electron . --user-data-dir="$HOME/.config/sabaki-plus-dev" path/to/file.sgf
 ```
 
-`--user-data-dir` sets the folder itself (no `Sabaki` subfolder is added), and
+`--user-data-dir` sets the folder itself (no subfolder is added), and
 upstream's e2e fixture uses it the same way.
 
 ## KataGo engine
