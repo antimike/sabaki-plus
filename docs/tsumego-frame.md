@@ -396,6 +396,10 @@ and 35 for the first sample with the stones guess.
 
 ### Ownership as an attacker signal (kata 8ar0, not adopted)
 
+**Decision (MH, 2026-11-23): not adopted; D10 stays.** The hybrid below would
+only relabel problems that fail anyway and already carry D10's warning. The
+signal is kept in the harness for quiz mode's status reading (kata tb1s).
+
 A candidate to replace or extend D10 (`firstmove.js --own-attacker`,
 `ownAttacker`): search the problem start twice at 500 visits, once with the side
 to play moving first and once with it passing first, and read KataGo's ownership
