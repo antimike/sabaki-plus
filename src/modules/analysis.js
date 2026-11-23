@@ -17,8 +17,16 @@
 // (ten-thousandths). When omitted, the format is inferred from the presence of a
 // decimal point — correct for all real output except an integer-valued kata
 // float (e.g. a forced-win `winrate 1`), so pass the dialect when it is known.
+//
+// Fork (baduk mcms): `includePass` keeps a `move pass` candidate, with vertex
+// [-1, -1] and an empty line; by default it is dropped, as upstream does.
 
-export function parseAnalysis(line, board, winrateFormat) {
+export function parseAnalysis(
+  line,
+  board,
+  winrateFormat,
+  {includePass = false} = {},
+) {
   return (
     line
       .split(/\s*info\s+/)
@@ -54,7 +62,9 @@ export function parseAnalysis(line, board, winrateFormat) {
       // must not throw and discard every variation on the line.
       .filter(
         ({move, winrate}) =>
-          move != null && winrate != null && /^[A-Za-z]\d+$/.test(move),
+          move != null &&
+          winrate != null &&
+          (/^[A-Za-z]\d+$/.test(move) || (includePass && move === 'pass')),
       )
       .map(({move, visits, winrate, scoreLead, pv}) => ({
         vertex: board.parseVertex(move),

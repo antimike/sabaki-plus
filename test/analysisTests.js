@@ -168,6 +168,35 @@ describe('parseAnalysis (parser logic)', () => {
     assert.strictEqual(v.moves.length, 1)
   })
 
+  it('drops a pass candidate by default, as upstream does', () => {
+    let vs = parseAnalysis(
+      'info move Q16 visits 20 winrate 0.55 pv Q16 ' +
+        'info move pass visits 10 winrate 0.6 scoreLead 3 pv pass Q16',
+      board,
+      'float',
+    )
+    assert.deepStrictEqual(
+      vs.map(({vertex}) => vertex),
+      [[15, 3]],
+    )
+  })
+
+  it('keeps a pass candidate with includePass (baduk mcms)', () => {
+    let vs = parseAnalysis(
+      'info move Q16 visits 20 winrate 0.55 pv Q16 ' +
+        'info move pass visits 10 winrate 0.6 scoreLead 3 pv pass Q16',
+      board,
+      'float',
+      {includePass: true},
+    )
+    assert.strictEqual(vs.length, 2)
+    assert.deepStrictEqual(vs[1].vertex, [-1, -1])
+    assert.deepStrictEqual(vs[1].moves, [])
+    assert.strictEqual(vs[1].visits, 10)
+    assert(Math.abs(vs[1].winrate - 60) < 1e-9, `got ${vs[1].winrate}`)
+    assert.strictEqual(vs[1].scoreLead, 3)
+  })
+
   it('keeps a move reported with visits 0 (policy-prior only, no playouts)', () => {
     let [v] = parseAnalysis('info move Q16 visits 0 winrate 0.5 pv Q16', board)
     assert.strictEqual(v.visits, 0)
