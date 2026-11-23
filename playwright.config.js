@@ -45,6 +45,11 @@ module.exports = defineConfig({
       dependencies: ['smoke'],
     },
     {
+      name: 'offwindow-bar',
+      testMatch: /offwindow-bar\.spec\.js/,
+      dependencies: ['smoke'],
+    },
+    {
       name: 'settings-folder',
       testMatch: /settings-folder\.spec\.js/,
       dependencies: ['smoke'],
