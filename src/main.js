@@ -8,7 +8,16 @@ const {
   BrowserWindow,
   Menu,
 } = require('electron')
-const {resolve} = require('path')
+const {join, resolve} = require('path')
+
+// Fork: keep settings apart from an installed Sabaki, whose productName this
+// fork shares (~/.config/Sabaki on Linux). Must run before ./i18n and
+// ./setting are required: setting.js reads userData at load. An explicit
+// --user-data-dir (dev runs, the e2e fixture) still wins.
+if (!app.commandLine.hasSwitch('user-data-dir')) {
+  app.setPath('userData', join(app.getPath('appData'), 'sabaki-tsumego'))
+}
+
 const i18n = require('./i18n')
 const setting = require('./setting')
 const updater = require('./updater')
