@@ -155,6 +155,7 @@
     "start": "electron ./",
     "bundle": "webpack --mode production",
     "build": "npm run bundle && electron-builder --dir",
+    "install:desktop": "node scripts/install-desktop.mjs",
     "format-base": "prettier \"**/*.{js,html,md}\" \"!{{dist,i18n}/**,bundle.js*}\"",
     "format-check": "npm run format-base -- --check",
     "format": "npm run format-base -- --write",
