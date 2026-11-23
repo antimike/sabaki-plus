@@ -40,6 +40,10 @@
 // start and wins with the flip (`auto` in the results). The `attacker` rerun
 // then tries the other one.
 //
+// --own-attacker picks the attacker from KataGo's ownership instead (kata
+// 8ar0, see ownAttacker); --own-frame none|guess|flip chooses the position it
+// searches. --signal-only records the attacker signals and skips the judging.
+//
 // --summary prints the tables again from a saved results file.
 //
 // Usage (from the repo root):
@@ -47,6 +51,7 @@
 //     [--rerun-visits N] [--per-tier N] [--seed N] [--tiers 1a,1b,1c,1d]
 //     [--limit N] [--json FILE] [--problems DIR] [--katago BIN]
 //     [--model FILE] [--config FILE] [--window-check] [--auto-attacker]
+//     [--own-attacker] [--own-frame none|guess|flip] [--signal-only]
 //     [--summary FILE.json] [FILE.json ...]
 //
 // Problem files named on the command line replace the sample. Problems are

@@ -394,5 +394,76 @@ and 35 for the first sample with the stones guess.
 - **Ko.** Yamada Basic 1006 passes with one ko threat for the defender (b10),
   and with none under tf3.
 
+### Ownership as an attacker signal (kata 8ar0, not adopted)
+
+A candidate to replace or extend D10 (`firstmove.js --own-attacker`,
+`ownAttacker`): search the problem start twice at 500 visits, once with the side
+to play moving first and once with it passing first, and read KataGo's ownership
+of the window's stones. A colour's loss is how many of its window stones the
+other colour owns, summed over both orders; the colour that loses more is the
+defender. Under a one-stone margin the stones guess stays. Unlike D10 it does
+not need the side to play to win, so it still answers when the engine reads the
+book move as failing.
+
+**Which position.** `--own-frame` tried three, on both samples with
+`--signal-only`:
+
+- `none`, the bare problem with komi 0 and both players kept to the window: the
+  net reads the attacker's outer stones as weak (the whole empty board is around
+  them) and the inside group as able to escape.
+- `flip`, the frame of the other attacker: worst (under 270 of the 374 settled,
+  against 334 for `guess`).
+- `guess`, the stones guess's frame: best, so the numbers below use it. Starting
+  from a frame does tilt the reading toward its attacker, but this had the
+  fewest misses.
+
+**Against D10** (b10, 2026-11-22; seed 1 and seed 2, 200 problems each; D10
+recomputed in the same runs). "Settled": the attacker a judged run confirms (a
+PASS or ALT, or a FAIL whose `attacker` rerun passes). "Engine-dead":
+`engine-dead` and `frame` FAILs, counted right when the side to play defends,
+the 9ds2 reading. "Hand": `baduk/private-tests` (Maeda 1k-5k 167 and 013,
+Ishigure Basic 104, Maeda 10k-5k 123, Cho Elementary 0340).
+
+| attacker right      | n   | stones guess | D10 | ownership (`guess`) | ownership (`none`) | hybrid |
+| ------------------- | --- | ------------ | --- | ------------------- | ------------------ | ------ |
+| settled, seed 1     | 185 | 165          | 183 | 163                 | 158                | 183    |
+| settled, seed 2     | 189 | 165          | 189 | 171                 | 168                | 189    |
+| engine-dead, seed 1 | 12  | 5            | 6   | 9                   | 8                  | 10     |
+| engine-dead, seed 2 | 8   | 5            | 5   | 8                   | 8                  | 8      |
+| hand                | 5   | 2            | 3   | 5                   | 5                  | 5      |
+
+The hand row overlaps the others (123, 0340 and 013 are engine-dead in seed 1).
+"Hybrid": D10 as it is, with ownership deciding only when D10 warns (the side to
+play loses with either attacker), i.e. 2 more searches for about 5% of problems.
+
+- **Ownership alone is worse where the answer is known.** It disagrees with D10
+  on 48 of the 400 problems. Judged with the ownership attacker (2000 visits),
+  17 pass, and D10 passes all of them too (either attacker works). 23 fail where
+  D10 passes or gets an ALT, and in 8 both fail. Typical miss: Black to play,
+  D10 flips to White attacking, and ownership has White's window stones lost in
+  both orders (Ishigure Basic 084: White 6.2 and 3.7 stones, Black 0.1 and 0.2).
+  The signal answers "whose stones are at stake", but the frame needs "whose
+  wall surrounds the window". In these problems the defender lives by capturing
+  attacker stones. This explanation is a hypothesis: the misses have not been
+  checked one by one.
+- **It does fix the engine-dead attackers.** In 7 of the 21 problems where D10
+  warns (12 in seed 1, 9 in seed 2), ownership picks the colour the 9ds2 reading
+  supports where D10 keeps the wrong guess: Maeda 10k-5k 123, Cho 0340, Maeda
+  Newly Selected 089, Maeda 1k-1d 117, Ishigure Shodan 013, and Enjoy 010 and
+  015 (margins 1.3 to 21). None of them passes afterwards: they stay
+  `engine-dead` (117: `ko`), now with the right attacker. Ownership is wrong on
+  MTAP Elementary 036, and Fujisawa Intermediate 45 is a tie (margin 0.01), so
+  both keep the guess.
+- **The 167 signature.** Maeda 1k-5k 184 and Fifty Three To Go 006 (the top move
+  wins, the SOL move loses, the flip passes) keep the stones guess under
+  ownership too (margins 5.1 and -12.8), as do D10 and the hand check of 167.
+  That supports, but does not prove, reading "20 of 22" above as 20 of 20; a
+  hand check of the two would settle it.
+- **Private e2e** (`--project=private-problems`, b10): 12 pass, and 123 and Cho
+  0340 are the expected failures, still under D10. The harness reading of the
+  five problems is right for ownership and the hybrid (5 of 5) and wrong for D10
+  on those two. The app does not have the ownership rule, so the expected
+  failures stay until it is built.
+
 The run's per-problem results stay in `scripts/frame-calibration/results/`
 (gitignored); `firstmove.js --summary FILE` reprints these tables from one.
