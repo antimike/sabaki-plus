@@ -81,6 +81,27 @@ npx electron . --user-data-dir="$HOME/.config/sabaki-plus-dev" path/to/file.sgf
 `--user-data-dir` sets the folder itself (no subfolder is added), and
 upstream's e2e fixture uses it the same way.
 
+## Desktop entry: a built snapshot of plus
+
+For daily use the fork is installed as "Sabaki Tsumego" in the app launcher:
+
+```
+npm run install:desktop             # build plus and install the snapshot
+npm run install:desktop -- --check  # is the installed snapshot behind plus?
+```
+
+`scripts/install-desktop.mjs` builds with `npm run build` (electron-builder
+`--dir`), copies `dist/linux-unpacked` to `~/.local/lib/sabaki-tsumego`, and
+writes `~/.local/share/applications/sabaki-tsumego.desktop`. `BUILT_FROM` in
+that folder records the commit. It builds only from a clean `plus`, so the
+launcher runs merged work; feature branches built later do not touch it.
+
+**Re-run it after every merge into plus.** The fork has no version numbers of
+its own yet (the version is upstream's; kata p751 decides), so "a new release"
+means a new `plus` tip, and `--check` says when the snapshot is behind. The
+entry registers no file types, so an installed Sabaki stays the default for
+`.sgf`. Both share the window class `sabaki`.
+
 ## KataGo engine
 
 Local analysis uses KataGo over GTP (`kata-analyze`), set up like any Sabaki
