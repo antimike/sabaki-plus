@@ -11,6 +11,7 @@ import {
   guessAttacker,
   inferAttackerFromText,
   restrictAnalysisToWindow,
+  foldOffWindowAnalysis,
 } from '../src/modules/tsumegoframe.js'
 
 // All positions here are made up for these tests.
@@ -712,6 +713,79 @@ describe('tsumegoframe', () => {
       assert.strictEqual(vertices.length, 6)
       assert.deepStrictEqual(vertices[0], [2, 0])
       assert.deepStrictEqual(vertices[5], [4, 1])
+    })
+  })
+
+  describe('foldOffWindowAnalysis', () => {
+    let window = {rangeX: [0, 7], rangeY: [0, 5]}
+    let v = (vertex, visits, winrate = 50, scoreLead = 0) => ({
+      vertex,
+      visits,
+      winrate,
+      scoreLead,
+      moves: [vertex],
+    })
+
+    it('returns nothing when every candidate is in the window', () => {
+      assert.deepStrictEqual(
+        foldOffWindowAnalysis([v([1, 1], 50), v([2, 2], 10)], window),
+        [],
+      )
+    })
+
+    it('folds off-window moves into one ko threat, the one with most visits', () => {
+      let result = foldOffWindowAnalysis(
+        [v([1, 1], 50), v([15, 3], 20, 90, 12.5), v([3, 15], 30, 95, 19.7)],
+        window,
+      )
+
+      assert.deepStrictEqual(result, [
+        {
+          kind: 'koThreat',
+          vertex: [3, 15],
+          visits: 30,
+          winrate: 95,
+          scoreLead: 19.7,
+          best: false,
+        },
+      ])
+    })
+
+    it('folds a pass into tenuki and orders entries by visits', () => {
+      let result = foldOffWindowAnalysis(
+        [v([1, 1], 40), v([-1, -1], 60, 41, -2), v([15, 3], 5)],
+        window,
+      )
+
+      assert.deepStrictEqual(
+        result.map(({kind}) => kind),
+        ['tenuki', 'koThreat'],
+      )
+      assert.deepStrictEqual(result[0].vertex, [-1, -1])
+    })
+
+    it('marks an entry best only when no candidate has more visits', () => {
+      let result = foldOffWindowAnalysis(
+        [v([1, 1], 40), v([-1, -1], 60), v([15, 3], 5)],
+        window,
+      )
+
+      assert.deepStrictEqual(
+        result.map(({kind, best}) => [kind, best]),
+        [
+          ['tenuki', true],
+          ['koThreat', false],
+        ],
+      )
+    })
+
+    it('marks nothing best when an in-window move leads', () => {
+      let result = foldOffWindowAnalysis(
+        [v([1, 1], 80), v([-1, -1], 60)],
+        window,
+      )
+
+      assert.strictEqual(result[0].best, false)
     })
   })
 

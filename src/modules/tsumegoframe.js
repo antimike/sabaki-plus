@@ -949,3 +949,49 @@ export function restrictAnalysisToWindow(variations, {rangeX, rangeY}) {
       return {...variation, moves: variation.moves.slice(0, end)}
     })
 }
+
+/**
+ * Fold the candidates outside the window into at most two entries the cropped
+ * board cannot show (baduk mcms): 'koThreat' (a frame ko threat, the best of
+ * them by visits) and 'tenuki' (a pass). The engine may play only the window,
+ * the frame's ko threats and pass (`allow`), so any other off-window move is
+ * folded with the threats. `best` marks an entry that has the most visits of
+ * all candidates, inside the window or not, as the heatmap's strongest cell.
+ * Ordered by visits, most first.
+ *
+ * @param {Array<{vertex: number[], visits: number, winrate: number,
+ *   scoreLead: ?number}>} variations - from parseAnalysis, with passes
+ * @param {{rangeX: number[], rangeY: number[]}} window
+ * @returns {Array<{kind: 'koThreat'|'tenuki', vertex: number[],
+ *   visits: number, winrate: number, scoreLead: ?number, best: boolean}>}
+ */
+export function foldOffWindowAnalysis(variations, {rangeX, rangeY}) {
+  let isPass = ([x, y]) => x < 0 || y < 0
+  let inWindow = ([x, y]) =>
+    x >= rangeX[0] && x <= rangeX[1] && y >= rangeY[0] && y <= rangeY[1]
+  let maxVisits = Math.max(0, ...variations.map(({visits}) => visits || 0))
+  let entries = {}
+
+  for (let variation of variations) {
+    let {vertex} = variation
+    if (vertex == null || (!isPass(vertex) && inWindow(vertex))) continue
+
+    let kind = isPass(vertex) ? 'tenuki' : 'koThreat'
+    let current = entries[kind]
+    if (current != null && (current.visits || 0) >= (variation.visits || 0))
+      continue
+
+    entries[kind] = {
+      kind,
+      vertex,
+      visits: variation.visits,
+      winrate: variation.winrate,
+      scoreLead: variation.scoreLead,
+      best: maxVisits > 0 && (variation.visits || 0) === maxVisits,
+    }
+  }
+
+  return Object.values(entries).sort(
+    (a, b) => (b.visits || 0) - (a.visits || 0),
+  )
+}
