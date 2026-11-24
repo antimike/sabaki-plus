@@ -98,9 +98,13 @@ launcher runs merged work; feature branches built later do not touch it.
 
 **Re-run it after every merge into plus.** The fork has no version numbers of
 its own yet (the version is upstream's; kata p751 decides), so "a new release"
-means a new `plus` tip, and `--check` says when the snapshot is behind. The
-entry registers no file types, so an installed Sabaki stays the default for
-`.sgf`. Both share the window class `sabaki`.
+means a new `plus` tip, and `--check` says when the snapshot is behind.
+
+The entry registers `.sgf` as `application/x-go-sgf` (shared-mime-info's SGF
+type, never `text/plain`). `src/main.js` calls
+`app.setDesktopName('sabaki-tsumego.desktop')`, so on Wayland the window's
+app_id is `sabaki-tsumego`, not upstream's `sabaki`, and matches the entry's
+`StartupWMClass`. Under X11 the WM_CLASS still comes from `productName`.
 
 ## KataGo engine
 
