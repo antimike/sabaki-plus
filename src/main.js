@@ -18,6 +18,11 @@ if (!app.commandLine.hasSwitch('user-data-dir')) {
   app.setPath('userData', join(app.getPath('appData'), 'sabaki-tsumego'))
 }
 
+// Fork: on Wayland the window's app_id comes from the desktop file name, which
+// would be upstream's sabaki.desktop; match the fork's launcher entry instead
+// (scripts/install-desktop.mjs), so docks and window rules tell it apart.
+app.setDesktopName('sabaki-tsumego.desktop')
+
 const i18n = require('./i18n')
 const setting = require('./setting')
 const updater = require('./updater')

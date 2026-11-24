@@ -27,6 +27,11 @@ test('settings go to sabaki-tsumego, not Sabaki', async () => {
     expect(userData).toBe(path.join(configHome, 'sabaki-tsumego'))
     expect(fs.existsSync(path.join(userData, 'settings.json'))).toBe(true)
     expect(fs.existsSync(path.join(configHome, 'Sabaki'))).toBe(false)
+
+    // Fork: the desktop name Chromium takes the Wayland app_id from matches
+    // the launcher entry (scripts/install-desktop.mjs), not upstream's
+    let desktop = await app.evaluate(() => process.env.CHROME_DESKTOP)
+    expect(desktop).toBe('sabaki-tsumego.desktop')
   } finally {
     try {
       await app.evaluate(({app}) => app.exit(0))
