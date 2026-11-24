@@ -9,8 +9,8 @@
 // $XDG_DATA_HOME/../lib/sabaki-tsumego (~/.local/lib/sabaki-tsumego), outside
 // the repo, so building a feature branch later does not change what the
 // launcher runs. BUILT_FROM there records the commit. The entry goes to
-// $XDG_DATA_HOME/applications/sabaki-tsumego.desktop. It registers no file
-// types, so an installed Sabaki stays the default for .sgf.
+// $XDG_DATA_HOME/applications/sabaki-tsumego.desktop. It registers .sgf as
+// application/x-go-sgf (shared-mime-info's SGF type), not text/plain.
 //
 // Builds only from a clean `plus` checkout: the launcher should run merged
 // work, not whatever branch is checked out.
@@ -118,6 +118,10 @@ function install() {
       `Icon=${join(target, 'logo.png')}`,
       'Terminal=false',
       'Categories=Game;BoardGame;',
+      // The app's Wayland app_id (app.setDesktopName in src/main.js)
+      'StartupWMClass=sabaki-tsumego',
+      // The shared-mime-info SGF type, never text/plain
+      'MimeType=application/x-go-sgf;',
       '',
     ].join('\n'),
   )
