@@ -50,6 +50,11 @@ module.exports = defineConfig({
       dependencies: ['smoke'],
     },
     {
+      name: 'startup-attach',
+      testMatch: /startup-attach\.spec\.js/,
+      dependencies: ['smoke'],
+    },
+    {
       name: 'settings-folder',
       testMatch: /settings-folder\.spec\.js/,
       dependencies: ['smoke'],

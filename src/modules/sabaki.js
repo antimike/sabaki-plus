@@ -256,7 +256,10 @@ class Sabaki extends EventEmitter {
 
     return {
       get title() {
-        let title = self.appName
+        // Fork: the window title names the fork; appName (upstream's) still
+        // goes into saved files (AP) and the updater.
+        let appTitle = 'Sabaki Tsumego'
+        let title = appTitle
         let {representedFilename, gameIndex, gameTrees} = state
         let t = i18n.context('sabaki.window')
 
@@ -271,7 +274,7 @@ class Sabaki extends EventEmitter {
         }
 
         if (representedFilename && process.platform != 'darwin') {
-          title += ' — ' + self.appName
+          title += ' — ' + appTitle
         }
 
         return title
@@ -1879,6 +1882,22 @@ class Sabaki extends EventEmitter {
         waiting: false,
       })
     })
+  }
+
+  // Fork (baduk, MH 2026-11-23): attach an engine once the window is up, so
+  // it warms up in the background; nothing is analysed until analysis is
+  // started. `engines.attach_on_startup` is true (the first listed engine),
+  // an engine's name, or false.
+  attachStartupEngine() {
+    let choice = setting.get('engines.attach_on_startup')
+    let engines = setting.get('engines.list') ?? []
+    if (!choice || this.state.attachedEngineSyncers.length > 0) return
+
+    let engine =
+      typeof choice === 'string'
+        ? engines.find(({name}) => name === choice)
+        : engines[0]
+    if (engine != null) this.attachEngines([engine])
   }
 
   attachEngines(engines) {
