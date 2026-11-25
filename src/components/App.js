@@ -65,6 +65,7 @@ class App extends Component {
 
     window.addEventListener('load', () => {
       sabaki.events.emit('ready')
+      sabaki.attachStartupEngine()
     })
 
     ipcRenderer.on('load-file', (evt, ...args) => {

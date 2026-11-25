@@ -119,6 +119,8 @@ let defaults = {
   'edit.show_removenode_warning': true,
   'edit.show_removeothervariations_warning': true,
   'engines.list': [],
+  // Fork: true (first listed engine), an engine name, or false
+  'engines.attach_on_startup': true,
   'engines.analyze_commands': ['analyze', 'kata-analyze', 'lz-analyze'],
   'engines.gemove_analyze_commands': [
     'genmove_analyze',

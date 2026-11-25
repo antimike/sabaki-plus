@@ -439,12 +439,10 @@ async function main() {
 
   newWindow(openfile)
 
-  if (setting.get('app.startup_check_updates')) {
-    setTimeout(
-      () => checkForUpdates(),
-      setting.get('app.startup_check_updates_delay'),
-    )
-  }
+  // Fork: no startup update check (upstream checked when
+  // app.startup_check_updates was set): the updater asks upstream's releases
+  // (SabakiHQ), which are not this fork's. Help > Check for Updates still asks
+  // upstream, on request only.
 
   ipcMain.on('new-window', (evt, ...args) => newWindow(...args))
   ipcMain.on('build-menu', (evt, ...args) => buildMenu(...args))

@@ -106,6 +106,24 @@ type, never `text/plain`). `src/main.js` calls
 app_id is `sabaki-tsumego`, not upstream's `sabaki`, and matches the entry's
 `StartupWMClass`. Under X11 the WM_CLASS still comes from `productName`.
 
+When the fork gets version numbers (p751), put the version in the entry's
+`Name` too, as AppImageLauncher shows plain Sabaki as "Sabaki (0.60.0)" in the
+app picker; today the entry's `Comment` carries `git describe`.
+
+## Startup: engine, title, updates
+
+- **Engine.** `engines.attach_on_startup` (default `true`) attaches the first
+  engine in the engine list once the window is up; an engine's name picks that
+  one, `false` turns it off. KataGo starts in the background and the window
+  does not wait for it; nothing is analysed until analysis is started. Set it
+  in `settings.json` while the app is closed (the app rewrites the file on
+  exit). Checked by `e2e/startup-attach.spec.js`.
+- **Title.** The window title says "Sabaki Tsumego"; `appName` stays upstream's
+  "Sabaki", so saved files keep `AP[Sabaki:…]`.
+- **Updates.** No update check at startup: the updater asks upstream's
+  releases (SabakiHQ), not the fork's. Help → Check for Updates still asks
+  upstream, on request.
+
 ## KataGo engine
 
 Local analysis uses KataGo over GTP (`kata-analyze`), set up like any Sabaki
